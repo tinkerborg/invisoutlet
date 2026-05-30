@@ -1,0 +1,62 @@
+site_name: intecular-client
+site_description: Async Python client and CLI for Intecular smart outlets
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+
+nav:
+  - Home: index.md
+  - API: api.md
+  - CLI: cli.md
+
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - scripts/gen_ref.py
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_root_heading: true
+            show_source: false
+            members_order: source
+            docstring_section_style: table
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true      # make type names in signatures clickable
+            line_length: 60                # wrap long signatures instead of one scrolling line
+            filters: ["!^_", "!_raw$"]   # hide private members and wire (de)serializers
+            show_category_heading: true
+            group_by_category: true
+            show_if_no_docstring: true     # dataclass fields have no per-field docstrings
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - mkdocs-click

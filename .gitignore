@@ -1,0 +1,19 @@
+# mkdocs build output, and the throwaway docs_dir it builds from
+/site/
+/docs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# venv / tooling
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/

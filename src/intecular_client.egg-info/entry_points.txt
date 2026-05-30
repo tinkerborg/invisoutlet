@@ -1,0 +1,2 @@
+[console_scripts]
+intecular = intecular_client.cli.app:app

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intecular-client"
+version = "0.1.0"
+description = "Python client library for Intecular smart outlets"
+requires-python = ">=3.13"
+license = "MIT"
+dependencies = [
+    "aiohttp>=3.9",
+    "zeroconf>=0.131",
+    "typer>=0.12",
+    "rich>=13",
+    "questionary>=2.0",
+]
+
+[project.scripts]
+intecular = "intecular_client.cli.app:app"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.26",
+    "mkdocs-click>=0.8",
+    "mkdocs-gen-files>=0.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

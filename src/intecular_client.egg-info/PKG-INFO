@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: intecular-client
+Version: 0.1.0
+Summary: Python client library for Intecular smart outlets
+License-Expression: MIT
+Requires-Python: >=3.13
+License-File: LICENSE
+Requires-Dist: aiohttp>=3.9
+Requires-Dist: zeroconf>=0.131
+Requires-Dist: typer>=0.12
+Requires-Dist: rich>=13
+Requires-Dist: questionary>=2.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Provides-Extra: docs
+Requires-Dist: mkdocs>=1.6; extra == "docs"
+Requires-Dist: mkdocs-material>=9.5; extra == "docs"
+Requires-Dist: mkdocstrings[python]>=0.26; extra == "docs"
+Requires-Dist: mkdocs-click>=0.8; extra == "docs"
+Requires-Dist: mkdocs-gen-files>=0.5; extra == "docs"
+Dynamic: license-file
