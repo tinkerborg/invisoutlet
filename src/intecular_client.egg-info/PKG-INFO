@@ -7,10 +7,12 @@ Requires-Python: >=3.13
 License-File: LICENSE
 Requires-Dist: aiohttp>=3.9
 Requires-Dist: zeroconf>=0.131
-Requires-Dist: typer>=0.12
-Requires-Dist: rich>=13
-Requires-Dist: questionary>=2.0
+Provides-Extra: cli
+Requires-Dist: typer>=0.12; extra == "cli"
+Requires-Dist: rich>=13; extra == "cli"
+Requires-Dist: questionary>=2.0; extra == "cli"
 Provides-Extra: dev
+Requires-Dist: intecular-client[cli]; extra == "dev"
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
 Requires-Dist: pytest-cov>=5.0; extra == "dev"

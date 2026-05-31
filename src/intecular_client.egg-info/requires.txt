@@ -1,10 +1,13 @@
 aiohttp>=3.9
 zeroconf>=0.131
+
+[cli]
 typer>=0.12
 rich>=13
 questionary>=2.0
 
 [dev]
+intecular-client[cli]
 pytest>=8.0
 pytest-asyncio>=0.23
 pytest-cov>=5.0

@@ -15,18 +15,20 @@ from intecular_client import (
     OtaProgress,
     OtaResult,
     OtaTarget,
+    OutletStatus,
     SensorData,
 )
 from intecular_client.client import (
     CALLBACK_FACTORY_RESET,
     CALLBACK_OTA_PROGRESS,
     CALLBACK_OTA_RESULT,
+    CALLBACK_OUTLET_STATUS,
     CALLBACK_RESET_NETWORK,
     CALLBACK_RESTART,
     CALLBACK_SENSOR_DATA,
 )
 
-from .conftest import FakeWebSocket
+from .conftest import FakeSession, FakeWebSocket
 
 
 def _last(ws: FakeWebSocket) -> dict:
@@ -284,6 +286,75 @@ async def test_sensor_data_push_dispatch(
     )
     await asyncio.sleep(0.01)
     assert len(received) == 1  # unsubscribed, no new events
+
+
+async def test_on_outlet_status_push(
+    connected_client: tuple[IntecularClient, FakeWebSocket],
+) -> None:
+    """on_outlet_status should fire for server-pushed outlet messages."""
+    client, ws = connected_client
+    received: list[OutletStatus] = []
+    client.on_outlet_status(received.append)
+
+    ws.push(
+        {
+            "packetID": 1,
+            "payload": {
+                "callbackName": CALLBACK_OUTLET_STATUS,
+                "callbackArgs": [1, 0],
+            },
+        }
+    )
+    await asyncio.sleep(0.01)
+    assert len(received) == 1
+    assert received[0].outlets == [True, False]
+
+
+async def test_auto_reconnect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A dropped connection is re-established and listeners keep firing."""
+    monkeypatch.setattr("intecular_client.client._RECONNECT_INITIAL_DELAY", 0.01)
+
+    session = FakeSession()
+    ws1, ws2 = FakeWebSocket(), FakeWebSocket()
+    session.queue_ws(ws1)
+    session.queue_ws(ws2)
+
+    client = IntecularClient("device.local")
+    client._session = session  # type: ignore[assignment]
+
+    received: list[SensorData] = []
+    connects: list[int] = []
+    disconnects: list[int] = []
+    client.on_sensor_data(received.append)
+    client.on_connect(lambda: connects.append(1))
+    client.on_disconnect(lambda: disconnects.append(1))
+
+    await client.connect()
+    assert client._ws is ws1
+
+    # Drop the first connection; the supervisor should reconnect to ws2.
+    await ws1.close()
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+        if client._ws is ws2:
+            break
+    assert client._ws is ws2
+    assert len(connects) >= 2  # initial connect + reconnect
+    assert len(disconnects) >= 1
+
+    # The listener registered before the drop still fires on the new connection.
+    ws2.push(
+        {
+            "payload": {
+                "callbackName": CALLBACK_SENSOR_DATA,
+                "callbackArgs": [0, {"temp_celsius": 21.0}],
+            }
+        }
+    )
+    await asyncio.sleep(0.02)
+    assert received and received[-1].temperature == 21.0
+
+    await client.close()
 
 
 async def test_ota_push_dispatch(

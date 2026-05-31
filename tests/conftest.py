@@ -86,6 +86,17 @@ class FakeSession:
     def __init__(self) -> None:
         """Initialize the fake session."""
         self.closed = False
+        self._next_ws: list[FakeWebSocket] = []
+
+    def queue_ws(self, ws: FakeWebSocket) -> None:
+        """Queue a websocket to be handed out by the next ``ws_connect``."""
+        self._next_ws.append(ws)
+
+    async def ws_connect(self, url: str, **kwargs: object) -> FakeWebSocket:
+        """Return the next queued websocket, or fail like a refused connection."""
+        if not self._next_ws:
+            raise aiohttp.ClientError("connection refused")
+        return self._next_ws.pop(0)
 
     async def close(self) -> None:
         """Mark the session closed."""

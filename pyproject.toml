@@ -11,16 +11,22 @@ license = "MIT"
 dependencies = [
     "aiohttp>=3.9",
     "zeroconf>=0.131",
-    "typer>=0.12",
-    "rich>=13",
-    "questionary>=2.0",
 ]
 
 [project.scripts]
 intecular = "intecular_client.cli.app:app"
 
 [project.optional-dependencies]
+# The CLI (`intecular`) needs these; the library itself does not. Installed via
+# `intecular-client[cli]`. Kept out of the base deps so embedding the library
+# (e.g. in a Home Assistant integration) doesn't pull in typer/rich/questionary.
+cli = [
+    "typer>=0.12",
+    "rich>=13",
+    "questionary>=2.0",
+]
 dev = [
+    "intecular-client[cli]",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",

@@ -13,6 +13,7 @@ import aiohttp
 from .exceptions import (
     IntecularCommandError,
     IntecularConnectionError,
+    IntecularError,
     IntecularTimeoutError,
 )
 from .models import (
@@ -70,6 +71,37 @@ class OtaTarget(IntEnum):
 # the ``*_nightlight_color`` methods rather than addressing the array directly.
 _LIGHT_NIGHTLIGHT = 5
 
+# Auto-reconnect backoff bounds (seconds).
+_RECONNECT_INITIAL_DELAY = 1.0
+_RECONNECT_MAX_DELAY = 60.0
+
+# WebSocket ping interval (seconds). Lets aiohttp detect a silently-dropped
+# connection (e.g. the device rebooting) instead of waiting forever for data.
+# This is also the detection latency, so keep it fairly low.
+_WS_HEARTBEAT = 10.0
+
+
+def _add_to(
+    callbacks: list[Callable[[], None]], callback: Callable[[], None]
+) -> Callable[[], None]:
+    """Append a callback to a list and return an unsubscribe function."""
+    callbacks.append(callback)
+
+    def _remove() -> None:
+        if callback in callbacks:
+            callbacks.remove(callback)
+
+    return _remove
+
+
+def _fire(callbacks: list[Callable[[], None]], name: str) -> None:
+    """Invoke each callback, logging and swallowing errors."""
+    for callback in list(callbacks):
+        try:
+            callback()
+        except Exception:  # noqa: BLE001 - a callback must not break the client
+            _LOGGER.exception("Error in %s callback", name)
+
 
 class IntecularClient:
     """Client for Intecular smart outlet devices over WebSocket."""
@@ -83,32 +115,29 @@ class IntecularClient:
         self._listeners: dict[int, list[Callable[[dict[str, Any]], None]]] = {}
         self._pending_requests: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._read_task: asyncio.Task[None] | None = None
+        self._closing = False
+        self._connect_callbacks: list[Callable[[], None]] = []
+        self._disconnect_callbacks: list[Callable[[], None]] = []
 
     async def connect(self) -> None:
-        """Connect to the device."""
-        self._session = aiohttp.ClientSession()
-        try:
-            self._ws = await asyncio.wait_for(
-                self._session.ws_connect(f"ws://{self.host}:{self.port}/ws"),
-                timeout=10.0,
-            )
-        except TimeoutError as err:
-            await self._session.close()
-            self._session = None
-            raise IntecularTimeoutError(
-                f"Timeout connecting to {self.host}:{self.port}"
-            ) from err
-        except (OSError, aiohttp.ClientError) as err:
-            await self._session.close()
-            self._session = None
-            raise IntecularConnectionError(
-                f"Cannot connect to {self.host}:{self.port}: {err}"
-            ) from err
+        """Connect to the device and keep the connection alive.
 
-        self._read_task = asyncio.create_task(self._read_loop())
+        Raises on the *initial* connection failure. Once connected, a background
+        task reads messages and automatically reconnects with backoff if the
+        connection drops, until :meth:`close` is called. Registered listeners
+        survive reconnects, so pushes resume automatically.
+        """
+        self._closing = False
+        try:
+            await self._connect_ws()
+        except IntecularError:
+            await self._cleanup_session()
+            raise
+        self._read_task = asyncio.create_task(self._supervise())
 
     async def close(self) -> None:
-        """Close the connection."""
+        """Close the connection and stop reconnecting."""
+        self._closing = True
         if self._read_task:
             self._read_task.cancel()
             try:
@@ -117,19 +146,105 @@ class IntecularClient:
                 pass
             self._read_task = None
 
-        if self._ws:
-            await self._ws.close()
-            self._ws = None
-
-        if self._session:
-            await self._session.close()
-            self._session = None
+        await self._cleanup_session()
 
         # Cancel any pending requests
         for future in self._pending_requests.values():
             if not future.done():
                 future.cancel()
         self._pending_requests.clear()
+
+    async def _connect_ws(self) -> None:
+        """Open the WebSocket (creating the session if needed). Raises on failure."""
+        if self._session is None:
+            self._session = aiohttp.ClientSession()
+        try:
+            self._ws = await asyncio.wait_for(
+                self._session.ws_connect(
+                    f"ws://{self.host}:{self.port}/ws", heartbeat=_WS_HEARTBEAT
+                ),
+                timeout=10.0,
+            )
+        except TimeoutError as err:
+            raise IntecularTimeoutError(
+                f"Timeout connecting to {self.host}:{self.port}"
+            ) from err
+        except (OSError, aiohttp.ClientError) as err:
+            raise IntecularConnectionError(
+                f"Cannot connect to {self.host}:{self.port}: {err}"
+            ) from err
+        self._notify_connected()
+
+    def on_connect(self, callback: Callable[[], None]) -> Callable[[], None]:
+        """Register a callback invoked after each successful (re)connect.
+
+        Returns a function to unregister the callback.
+        """
+        return _add_to(self._connect_callbacks, callback)
+
+    def on_disconnect(self, callback: Callable[[], None]) -> Callable[[], None]:
+        """Register a callback invoked when the connection is lost.
+
+        Not fired on an intentional :meth:`close`. Returns a function to
+        unregister the callback.
+        """
+        return _add_to(self._disconnect_callbacks, callback)
+
+    def _notify_connected(self) -> None:
+        """Fire the registered on-connect callbacks."""
+        _fire(self._connect_callbacks, "on_connect")
+
+    def _notify_disconnected(self) -> None:
+        """Fire the registered on-disconnect callbacks."""
+        _fire(self._disconnect_callbacks, "on_disconnect")
+
+    async def _cleanup_session(self) -> None:
+        """Close the WebSocket and HTTP session."""
+        if self._ws is not None:
+            await self._ws.close()
+            self._ws = None
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
+
+    async def _supervise(self) -> None:
+        """Read messages, reconnecting with backoff until the client is closed."""
+        delay = _RECONNECT_INITIAL_DELAY
+        while not self._closing:
+            await self._read_loop()
+            if self._closing:
+                break
+
+            await self._handle_disconnect()
+
+            while not self._closing:
+                await asyncio.sleep(delay)
+                if self._closing:
+                    break
+                try:
+                    await self._connect_ws()
+                except IntecularError as err:
+                    _LOGGER.debug("Reconnect to %s failed: %s", self.host, err)
+                    delay = min(delay * 2, _RECONNECT_MAX_DELAY)
+                    continue
+                _LOGGER.info("Reconnected to %s", self.host)
+                delay = _RECONNECT_INITIAL_DELAY
+                break
+
+    async def _handle_disconnect(self) -> None:
+        """Tear down a dropped connection and fail any in-flight requests."""
+        _LOGGER.warning("Connection to %s lost; reconnecting", self.host)
+        ws, self._ws = self._ws, None
+        if ws is not None:
+            try:
+                await ws.close()
+            except Exception:  # noqa: BLE001 - best-effort teardown
+                pass
+        for future in self._pending_requests.values():
+            if not future.done():
+                future.set_exception(IntecularConnectionError("Connection lost"))
+        self._pending_requests.clear()
+        self._notify_disconnected()
 
     async def __aenter__(self) -> "IntecularClient":
         """Enter async context manager."""
@@ -151,6 +266,27 @@ class IntecularClient:
                 callback(SensorData.from_raw(args[1]))
 
         return self._add_listener(CALLBACK_SENSOR_DATA, _wrapper)
+
+    def on_outlet_status(
+        self, callback: Callable[[OutletStatus], None]
+    ) -> Callable[[], None]:
+        """Register a callback for pushed outlet-status updates.
+
+        The device broadcasts callback 9 when outlet state changes (e.g. from
+        another controller or the physical button). The push envelope may carry
+        the status list directly or wrapped, so both shapes are accepted.
+
+        Returns a function to unregister the callback.
+        """
+
+        def _wrapper(msg: dict[str, Any]) -> None:
+            args = msg.get("payload", {}).get("callbackArgs", [])
+            if not isinstance(args, list) or not args:
+                return
+            status = args[1] if len(args) >= 2 and isinstance(args[1], list) else args
+            callback(OutletStatus.from_raw(status))
+
+        return self._add_listener(CALLBACK_OUTLET_STATUS, _wrapper)
 
     def on_message(
         self, callback_name: int, callback: Callable[[dict[str, Any]], None]

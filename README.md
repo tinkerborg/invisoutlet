@@ -8,9 +8,13 @@ endorsed by Intecular.
 ## Install
 
 ```bash
-uv pip install -e ".[dev]"        # library + CLI into the project venv
-uv tool install --editable .      # or just the `intecular` command, globally
+uv pip install -e ".[dev]"          # library + CLI + tests, into the project venv
+uv tool install --editable ".[cli]" # or just the `intecular` command, globally
 ```
+
+The library itself only needs `aiohttp` and `zeroconf`; the `intecular` CLI's
+extra dependencies (`typer`, `rich`, `questionary`) live under the `cli` extra,
+so embedding the library elsewhere stays lightweight.
 
 ## Using the library
 
