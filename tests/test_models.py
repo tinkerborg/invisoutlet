@@ -223,12 +223,12 @@ def test_available_updates_no_pm() -> None:
 
 
 def test_ota_progress_and_result() -> None:
-    """OTA push payloads should parse device and value from index 1/2."""
-    progress = OtaProgress.from_raw([0, 1, 42])
-    assert progress.device == 1
+    """OTA push payloads parse [device_type, value] (callbacks 22/23)."""
+    progress = OtaProgress.from_raw([1, 42])
+    assert progress.device_type == 1
     assert progress.progress == 42
 
-    result = OtaResult.from_raw([0, 1, 1])
-    assert result.device == 1
+    result = OtaResult.from_raw([2, 1])
+    assert result.device_type == 2
     assert result.success is True
-    assert OtaResult.from_raw([0, 1, 0]).success is False
+    assert OtaResult.from_raw([2, 0]).success is False

@@ -107,12 +107,12 @@ async def _firmware_update(client: IntecularClient, target: int, method: int) ->
     done = asyncio.Event()
 
     client.on_ota_progress(
-        lambda p: render.console.print(f"  device {p.device}: {p.progress}%")
+        lambda p: render.console.print(f"  device {p.device_type}: {p.progress}%")
     )
 
     def on_result(result: OtaResult) -> None:
         marker = "[green]✓[/green]" if result.success else "[red]✗[/red]"
-        render.console.print(f"{marker} OTA result for device {result.device}.")
+        render.console.print(f"{marker} OTA result for device {result.device_type}.")
         done.set()
 
     client.on_ota_result(on_result)

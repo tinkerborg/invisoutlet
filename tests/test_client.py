@@ -205,7 +205,7 @@ async def test_perform_ota_update_framing(
     client, ws = connected_client
     ws.responses[21] = [1, 1]
     await client.perform_ota_update(OtaTarget.INVISDECO, 0)
-    assert _last(ws)["callbackArgs"] == [1, 0]
+    assert _last(ws)["callbackArgs"] == [2, 0]
 
 
 async def test_calibrate_temp_humidity_converts_to_millis(

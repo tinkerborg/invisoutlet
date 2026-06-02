@@ -418,34 +418,67 @@ class AvailableUpdates:
 
 
 @dataclass
-class OtaProgress:
-    """A server-pushed OTA download progress update."""
+class FirmwareRelease:
+    """A firmware release from the Intecular update service.
 
-    device: int
+    Returned by the OTA-check endpoint for a single module: the latest available
+    revision, its download URL and the release notes (``message``).
+    """
+
+    current_fw_rev: str
+    available_fw_rev: str
+    ota_bin_url: str
+    message: str
+
+    @property
+    def update_available(self) -> bool:
+        """Whether the available revision differs from the installed one."""
+        return bool(self.available_fw_rev) and (
+            self.available_fw_rev != self.current_fw_rev
+        )
+
+    @classmethod
+    def from_raw(cls, data: dict[str, Any], current_fw_rev: str) -> FirmwareRelease:
+        """Create from an OTA-check response, given the installed revision."""
+        return cls(
+            current_fw_rev=current_fw_rev,
+            available_fw_rev=data.get("available_fw_rev", ""),
+            ota_bin_url=data.get("ota_bin_url", ""),
+            message=data.get("message", ""),
+        )
+
+
+@dataclass
+class OtaProgress:
+    """A server-pushed OTA download progress update (callback 22)."""
+
+    # 1 = InvisOutlet, 2 = InvisDeco, 3 = InvisOutlet (WWW partition).
+    device_type: int
     progress: int
 
     @classmethod
     def from_raw(cls, args: list[Any]) -> OtaProgress:
-        """Parse a callback 22 push, shape ``[_, device, progress]``."""
-        return cls(device=int(args[1]), progress=int(args[2]))
+        """Parse a callback 22 push, shape ``[device_type, progress]``."""
+        return cls(device_type=int(args[0]), progress=int(args[1]))
 
 
 @dataclass
 class OtaResult:
-    """A server-pushed OTA result update."""
+    """A server-pushed OTA result update (callback 23)."""
 
-    device: int
+    # 1 = InvisOutlet, 2 = InvisDeco, 3 = InvisOutlet (WWW partition).
+    device_type: int
     status: int
 
     @property
     def success(self) -> bool:
-        """Whether the OTA update succeeded."""
+        """Whether the OTA update succeeded (status 1 = success, 0 = fail)."""
         return self.status > 0
 
     @classmethod
     def from_raw(cls, args: list[Any]) -> OtaResult:
-        """Parse a callback 23 push, shape ``[_, device, status]``."""
-        return cls(device=int(args[1]), status=int(args[2]))
+        """Parse a callback 23 push, shape ``[device_type, status]``."""
+        return cls(device_type=int(args[0]), status=int(args[1]))
 
 
 def _bool_or_none(val: Any) -> bool | None:

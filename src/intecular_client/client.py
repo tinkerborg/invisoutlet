@@ -23,6 +23,7 @@ from .models import (
     ColorLightState,
     DeviceConfig,
     DeviceInfo,
+    FirmwareRelease,
     NightlightState,
     OtaProgress,
     OtaResult,
@@ -60,10 +61,27 @@ CALLBACK_TEMP_HUMIDITY_CALIBRATION = 28
 
 
 class OtaTarget(IntEnum):
-    """Which device an OTA firmware update targets (callback 21)."""
+    """Which device an OTA firmware update targets (callback 21).
 
-    INVISOUTLET = 0
-    INVISDECO = 1
+    Values match the device's 1-based numbering, shared with the ``device_type``
+    in the progress/result pushes (callbacks 22/23).
+    """
+
+    INVISOUTLET = 1
+    INVISDECO = 2
+
+
+# Intecular firmware-update (OTA) check service. Queried per module over HTTP to
+# learn the latest revision, its download URL and the release notes. The path is
+# ``/<module>/<product>/<hw_rev>/<current_fw>``.
+_OTA_CHECK_BASE = (
+    "https://oxv6el7gq2dyr57ljslfu5osrq0nhohh.lambda-url.us-east-1.on.aws"
+)
+_OTA_MODULE = {OtaTarget.INVISOUTLET: "IM", OtaTarget.INVISDECO: "PM"}
+# Device model name -> product code in the OTA-check URL. The codes are not
+# reported by the device, so models absent here have no known update channel and
+# :meth:`IntecularClient.check_firmware` returns ``None`` for them.
+_OTA_PRODUCT_CODES = {"InvisOutlet": "IVO1", "InvisDeco": "PRP1"}
 
 
 # Color-light array selector for the nightlight (the first ``callbackArgs``
@@ -534,20 +552,56 @@ class IntecularClient:
         args = response.get("payload", {}).get("callbackArgs", {})
         return AvailableUpdates.from_raw(args)
 
-    async def perform_ota_update(
-        self, target: OtaTarget, method: int = 0, timeout: float = 5.0
-    ) -> dict[str, Any]:
+    async def check_firmware(
+        self,
+        target: OtaTarget,
+        model: str,
+        hw_rev: str,
+        current_fw_rev: str,
+        timeout: float = 10.0,
+    ) -> FirmwareRelease | None:
+        """Look up the latest firmware for a module from the update service.
+
+        Returns ``None`` for a model with no known product code (i.e. no known
+        update channel). Unlike :meth:`get_available_updates`, this also yields
+        the download URL and release notes.
+        """
+        product = _OTA_PRODUCT_CODES.get(model)
+        if product is None:
+            return None
+        if self._session is None:
+            raise IntecularConnectionError("Not connected")
+        url = (
+            f"{_OTA_CHECK_BASE}/{_OTA_MODULE[target]}/{product}"
+            f"/{hw_rev}/{current_fw_rev}"
+        )
+        try:
+            async with self._session.get(
+                url, timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json(content_type=None)
+        except (TimeoutError, aiohttp.ClientError) as err:
+            raise IntecularConnectionError(
+                f"Firmware check failed for {model}: {err}"
+            ) from err
+        return FirmwareRelease.from_raw(data, current_fw_rev)
+
+    async def perform_ota_update(self, target: OtaTarget, method: int = 0) -> None:
         """Start an OTA update.
 
         Args:
             target: Which device to update (see :class:`OtaTarget`).
-            method: Update method identifier.
+            method: For the InvisDeco, 0 = over its own Wi-Fi, 1 = via the
+                InvisOutlet. Ignored for the InvisOutlet.
 
-        Progress and result arrive asynchronously via ``on_ota_progress`` and
+        Fire-and-forget: the device may not acknowledge before it gets busy
+        starting the download, so this does not wait for a reply. Progress and
+        result arrive asynchronously via ``on_ota_progress`` and
         ``on_ota_result``.
         """
-        return await self._send_request(
-            CALLBACK_OTA_PERFORM, [int(target), method], timeout
+        await self._send_command_noreply(
+            CALLBACK_OTA_PERFORM, [int(target), method]
         )
 
     async def restart_invisdeco(self, timeout: float = 5.0) -> dict[str, Any]:
@@ -596,7 +650,7 @@ class IntecularClient:
 
         def _wrapper(msg: dict[str, Any]) -> None:
             args = msg.get("payload", {}).get("callbackArgs", [])
-            if len(args) >= 3:
+            if len(args) >= 2:
                 callback(OtaProgress.from_raw(args))
 
         return self._add_listener(CALLBACK_OTA_PROGRESS, _wrapper)
@@ -611,7 +665,7 @@ class IntecularClient:
 
         def _wrapper(msg: dict[str, Any]) -> None:
             args = msg.get("payload", {}).get("callbackArgs", [])
-            if len(args) >= 3:
+            if len(args) >= 2:
                 callback(OtaResult.from_raw(args))
 
         return self._add_listener(CALLBACK_OTA_RESULT, _wrapper)
