@@ -406,17 +406,22 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
-    { name = "questionary" },
-    { name = "rich" },
-    { name = "typer" },
     { name = "zeroconf" },
 ]
 
 [package.optional-dependencies]
+cli = [
+    { name = "questionary" },
+    { name = "rich" },
+    { name = "typer" },
+]
 dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "questionary" },
+    { name = "rich" },
+    { name = "typer" },
 ]
 docs = [
     { name = "mkdocs" },
@@ -429,6 +434,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9" },
+    { name = "intecular-client", extras = ["cli"], marker = "extra == 'dev'" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
     { name = "mkdocs-click", marker = "extra == 'docs'", specifier = ">=0.8" },
     { name = "mkdocs-gen-files", marker = "extra == 'docs'", specifier = ">=0.5" },
@@ -437,12 +443,12 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "questionary", specifier = ">=2.0" },
-    { name = "rich", specifier = ">=13" },
-    { name = "typer", specifier = ">=0.12" },
+    { name = "questionary", marker = "extra == 'cli'", specifier = ">=2.0" },
+    { name = "rich", marker = "extra == 'cli'", specifier = ">=13" },
+    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12" },
     { name = "zeroconf", specifier = ">=0.131" },
 ]
-provides-extras = ["dev", "docs"]
+provides-extras = ["cli", "dev", "docs"]
 
 [[package]]
 name = "jinja2"

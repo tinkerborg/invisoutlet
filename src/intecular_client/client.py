@@ -6,6 +6,7 @@ import logging
 import random
 from collections.abc import Callable
 from enum import IntEnum
+from functools import partial
 from typing import Any
 
 import aiohttp
@@ -69,6 +70,27 @@ class OtaTarget(IntEnum):
 
     INVISOUTLET = 1
     INVISDECO = 2
+
+
+def target_for_device_type(device_type: int) -> OtaTarget | None:
+    """Map an OTA push ``device_type`` to the :class:`OtaTarget` it belongs to.
+
+    The pushes (callbacks 22/23) are 1-based: 1 = InvisOutlet, 2 = InvisDeco,
+    3 = the outlet's WWW partition (part of the outlet's own update). Returns
+    ``None`` for an unrecognized value.
+    """
+    if device_type in (1, 3):
+        return OtaTarget.INVISOUTLET
+    if device_type == 2:
+        return OtaTarget.INVISDECO
+    return None
+
+
+# Seconds without a progress push before an in-flight OTA update is treated as
+# failed. The device emits a junk status-0 result at the start of every update
+# (indistinguishable from a real early failure), so a stall timer is the only
+# reliable way to detect a genuine pre-download failure.
+_OTA_STALL_TIMEOUT = 60.0
 
 
 # Intecular firmware-update (OTA) check service. Queried per module over HTTP to
@@ -136,6 +158,14 @@ class IntecularClient:
         self._closing = False
         self._connect_callbacks: list[Callable[[], None]] = []
         self._disconnect_callbacks: list[Callable[[], None]] = []
+        # OTA state: per-target stall timer, which targets have reported progress
+        # since their trigger, and the gated result subscribers.
+        self._ota_stall: dict[OtaTarget, asyncio.TimerHandle] = {}
+        self._ota_seen_progress: set[OtaTarget] = set()
+        self._ota_result_callbacks: list[Callable[[OtaResult], None]] = []
+        # Internal listeners that drive the stall timer and gate result pushes.
+        self._add_listener(CALLBACK_OTA_PROGRESS, self._on_raw_ota_progress)
+        self._add_listener(CALLBACK_OTA_RESULT, self._on_raw_ota_result)
 
     async def connect(self) -> None:
         """Connect to the device and keep the connection alive.
@@ -171,6 +201,12 @@ class IntecularClient:
             if not future.done():
                 future.cancel()
         self._pending_requests.clear()
+
+        # Cancel any in-flight OTA stall timers
+        for handle in self._ota_stall.values():
+            handle.cancel()
+        self._ota_stall.clear()
+        self._ota_seen_progress.clear()
 
     async def _connect_ws(self) -> None:
         """Open the WebSocket (creating the session if needed). Raises on failure."""
@@ -603,6 +639,8 @@ class IntecularClient:
         await self._send_command_noreply(
             CALLBACK_OTA_PERFORM, [int(target), method]
         )
+        self._ota_seen_progress.discard(target)
+        self._arm_ota_stall(target)
 
     async def restart_invisdeco(self, timeout: float = 5.0) -> dict[str, Any]:
         """Restart the attached InvisDeco sub-device."""
@@ -658,17 +696,88 @@ class IntecularClient:
     def on_ota_result(
         self, callback: Callable[[OtaResult], None]
     ) -> Callable[[], None]:
-        """Register a callback for server-pushed OTA result updates.
+        """Register a callback for OTA result updates. Returns an unsubscribe.
 
-        Returns a function to unregister the callback.
+        Results are gated to paper over a firmware quirk: the device emits a
+        junk ``status=0`` result at the start of every update, before any
+        download. Such a pre-progress ``status=0`` is suppressed; a stall (no
+        progress within :data:`_OTA_STALL_TIMEOUT`) is instead reported as a
+        synthesized ``status=0`` result. Callbacks therefore fire exactly once
+        per update: a real ``status=1`` success, a real failure after progress
+        began, or the synthesized stall failure.
         """
+        self._ota_result_callbacks.append(callback)
 
-        def _wrapper(msg: dict[str, Any]) -> None:
-            args = msg.get("payload", {}).get("callbackArgs", [])
-            if len(args) >= 2:
-                callback(OtaResult.from_raw(args))
+        def _remove() -> None:
+            if callback in self._ota_result_callbacks:
+                self._ota_result_callbacks.remove(callback)
 
-        return self._add_listener(CALLBACK_OTA_RESULT, _wrapper)
+        return _remove
+
+    def _notify_ota_result(self, result: OtaResult) -> None:
+        """Fan a (real or synthesized) result out to the gated subscribers."""
+        for callback in list(self._ota_result_callbacks):
+            try:
+                callback(result)
+            except Exception:  # noqa: BLE001 - a callback must not break dispatch
+                _LOGGER.exception("Error in on_ota_result callback")
+
+    def _on_raw_ota_progress(self, msg: dict[str, Any]) -> None:
+        """Internal: mark progress seen and reset the stall timer."""
+        args = msg.get("payload", {}).get("callbackArgs", [])
+        if len(args) < 2:
+            return
+        target = target_for_device_type(OtaProgress.from_raw(args).device_type)
+        if target is None:
+            return
+        self._ota_seen_progress.add(target)
+        self._arm_ota_stall(target)
+
+    def _on_raw_ota_result(self, msg: dict[str, Any]) -> None:
+        """Internal: gate a result push before notifying subscribers."""
+        args = msg.get("payload", {}).get("callbackArgs", [])
+        if len(args) < 2:
+            return
+        result = OtaResult.from_raw(args)
+        target = target_for_device_type(result.device_type)
+        if target is not None and not result.success and (
+            target not in self._ota_seen_progress
+        ):
+            # Spurious pre-progress status-0: suppress, leaving the stall timer
+            # running so a genuine silent failure is still caught.
+            _LOGGER.debug(
+                "Suppressing spurious pre-progress OTA result for %s", target.name
+            )
+            return
+        # Terminal: success, or a real failure once progress had started.
+        if target is not None:
+            self._cancel_ota_stall(target)
+            self._ota_seen_progress.discard(target)
+        self._notify_ota_result(result)
+
+    def _arm_ota_stall(self, target: OtaTarget) -> None:
+        """(Re)start the stall timer for a target."""
+        self._cancel_ota_stall(target)
+        self._ota_stall[target] = asyncio.get_event_loop().call_later(
+            _OTA_STALL_TIMEOUT, partial(self._on_ota_stall, target)
+        )
+
+    def _cancel_ota_stall(self, target: OtaTarget) -> None:
+        """Cancel a target's stall timer if armed."""
+        handle = self._ota_stall.pop(target, None)
+        if handle is not None:
+            handle.cancel()
+
+    def _on_ota_stall(self, target: OtaTarget) -> None:
+        """Fire a synthesized failure result when an update stalls."""
+        self._ota_stall.pop(target, None)
+        self._ota_seen_progress.discard(target)
+        _LOGGER.warning(
+            "OTA update for %s stalled (no progress for %ss); reporting failure",
+            target.name,
+            _OTA_STALL_TIMEOUT,
+        )
+        self._notify_ota_result(OtaResult(device_type=int(target), status=0))
 
     async def send_command(
         self, callback_name: int, callback_args: Any = None, timeout: float = 5.0

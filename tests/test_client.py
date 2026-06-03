@@ -208,6 +208,86 @@ async def test_perform_ota_update_framing(
     assert _last(ws)["callbackArgs"] == [2, 0]
 
 
+def _push_ota(ws: FakeWebSocket, callback: int, args: list[int]) -> None:
+    """Inject an OTA progress/result push."""
+    ws.push({"packetID": 1, "payload": {"callbackName": callback, "callbackArgs": args}})
+
+
+async def test_ota_result_suppresses_spurious_pre_progress(
+    connected_client: tuple[IntecularClient, FakeWebSocket],
+) -> None:
+    """A status-0 result before any progress is the firmware's junk start signal."""
+    client, ws = connected_client
+    results: list[OtaResult] = []
+    client.on_ota_result(results.append)
+    _push_ota(ws, CALLBACK_OTA_RESULT, [2, 0])
+    await asyncio.sleep(0.01)
+    assert results == []
+
+
+async def test_ota_result_forwards_failure_after_progress(
+    connected_client: tuple[IntecularClient, FakeWebSocket],
+) -> None:
+    """A status-0 result once progress has started is a genuine failure."""
+    client, ws = connected_client
+    results: list[OtaResult] = []
+    client.on_ota_result(results.append)
+    _push_ota(ws, CALLBACK_OTA_PROGRESS, [2, 5])
+    await asyncio.sleep(0.01)
+    _push_ota(ws, CALLBACK_OTA_RESULT, [2, 0])
+    await asyncio.sleep(0.01)
+    assert len(results) == 1
+    assert results[0].device_type == 2
+    assert results[0].success is False
+
+
+async def test_ota_result_forwards_success(
+    connected_client: tuple[IntecularClient, FakeWebSocket],
+) -> None:
+    """A status-1 result is always forwarded as a success."""
+    client, ws = connected_client
+    results: list[OtaResult] = []
+    client.on_ota_result(results.append)
+    _push_ota(ws, CALLBACK_OTA_RESULT, [2, 1])
+    await asyncio.sleep(0.01)
+    assert len(results) == 1
+    assert results[0].success is True
+
+
+async def test_ota_stall_synthesizes_failure(
+    connected_client: tuple[IntecularClient, FakeWebSocket],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No progress within the stall timeout yields a synthesized failure result."""
+    client, ws = connected_client
+    monkeypatch.setattr("intecular_client.client._OTA_STALL_TIMEOUT", 0.05)
+    results: list[OtaResult] = []
+    client.on_ota_result(results.append)
+    await client.perform_ota_update(OtaTarget.INVISDECO, 0)
+    await asyncio.sleep(0.1)
+    assert len(results) == 1
+    assert results[0].device_type == 2
+    assert results[0].success is False
+
+
+async def test_ota_progress_resets_stall_timer(
+    connected_client: tuple[IntecularClient, FakeWebSocket],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each progress push pushes the stall deadline back."""
+    client, ws = connected_client
+    monkeypatch.setattr("intecular_client.client._OTA_STALL_TIMEOUT", 0.08)
+    results: list[OtaResult] = []
+    client.on_ota_result(results.append)
+    await client.perform_ota_update(OtaTarget.INVISDECO, 0)
+    # Keep progress flowing faster than the timeout; no failure should fire.
+    for pct in (10, 20, 30):
+        await asyncio.sleep(0.04)
+        _push_ota(ws, CALLBACK_OTA_PROGRESS, [2, pct])
+    await asyncio.sleep(0.01)
+    assert results == []
+
+
 async def test_calibrate_temp_humidity_converts_to_millis(
     connected_client: tuple[IntecularClient, FakeWebSocket],
 ) -> None:

@@ -1,6 +1,6 @@
 """Python client library for Intecular smart outlets."""
 
-from .client import IntecularClient, OtaTarget
+from .client import IntecularClient, OtaTarget, target_for_device_type
 from .discovery import DiscoveredDevice, discover
 from .exceptions import (
     IntecularCommandError,
@@ -48,4 +48,5 @@ __all__ = [
     "SensorData",
     "SubDeviceInfo",
     "discover",
+    "target_for_device_type",
 ]
