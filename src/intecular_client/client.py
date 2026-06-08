@@ -86,6 +86,12 @@ def target_for_device_type(device_type: int) -> OtaTarget | None:
     return None
 
 
+# device_type 3 (the outlet's WWW partition) reports as its own progress/result
+# stream but is a sub-phase of the outlet update, which ends with device_type 1.
+# A *successful* WWW result therefore isn't terminal — the main phase follows.
+_OTA_SUBPHASE_DEVICE_TYPE = 3
+
+
 # Seconds without a progress push before an in-flight OTA update is treated as
 # failed. The device emits a junk status-0 result at the start of every update
 # (indistinguishable from a real early failure), so a stall timer is the only
@@ -739,6 +745,11 @@ class IntecularClient:
         if len(args) < 2:
             return
         result = OtaResult.from_raw(args)
+        if result.device_type == _OTA_SUBPHASE_DEVICE_TYPE and result.success:
+            # A sub-phase (WWW partition) finished, not the whole update; the
+            # terminal phase (device_type 1) follows. Leave the stall timer
+            # running so it spans into that phase rather than ending here.
+            return
         target = target_for_device_type(result.device_type)
         if target is not None and not result.success and (
             target not in self._ota_seen_progress

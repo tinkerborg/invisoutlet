@@ -254,6 +254,23 @@ async def test_ota_result_forwards_success(
     assert results[0].success is True
 
 
+async def test_ota_result_suppresses_www_subphase(
+    connected_client: tuple[IntecularClient, FakeWebSocket],
+) -> None:
+    """A device_type-3 (WWW partition) success is a sub-phase, not terminal."""
+    client, ws = connected_client
+    results: list[OtaResult] = []
+    client.on_ota_result(results.append)
+    _push_ota(ws, CALLBACK_OTA_RESULT, [3, 1])  # WWW phase done
+    await asyncio.sleep(0.01)
+    assert results == []  # not forwarded
+    _push_ota(ws, CALLBACK_OTA_RESULT, [1, 1])  # main phase done -> terminal
+    await asyncio.sleep(0.01)
+    assert len(results) == 1
+    assert results[0].device_type == 1
+    assert results[0].success is True
+
+
 async def test_ota_stall_synthesizes_failure(
     connected_client: tuple[IntecularClient, FakeWebSocket],
     monkeypatch: pytest.MonkeyPatch,
