@@ -377,6 +377,18 @@ class IntecularClient:
         args = response.get("payload", {}).get("callbackArgs", {})
         return DeviceConfig.from_raw(args)
 
+    async def get_sensor_data(self, timeout: float = 5.0) -> SensorData:
+        """Fetch the faceplate's latest sensor readings on demand (callback 11).
+
+        Returns the same payload the device streams; fields a faceplate lacks are
+        omitted and come back as ``None``.
+        """
+        response = await self._send_request(CALLBACK_SENSOR_DATA, timeout=timeout)
+        args = response.get("payload", {}).get("callbackArgs", [])
+        if len(args) >= 2 and isinstance(args[1], dict):
+            return SensorData.from_raw(args[1])
+        return SensorData()
+
     async def set_config(
         self,
         *,
