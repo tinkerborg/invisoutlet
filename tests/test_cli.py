@@ -22,6 +22,7 @@ from intecular_client import (
     DiscoveredDevice,
     FirmwareUpdate,
     NightlightState,
+    OtaTarget,
     OutletStatus,
 )
 from intecular_client.cli import config, picker, state
@@ -81,8 +82,8 @@ class RecordingClient:
     async def get_nightlight(self) -> NightlightState:
         return NightlightState(mode=1, brightness=42)
 
-    async def get_nightlight_color(self) -> ColorLightState:
-        return ColorLightState(light=5, mode=2, leds=[])
+    async def get_color(self, light: int) -> ColorLightState:
+        return ColorLightState(light=light, mode=2, leds=[])
 
     async def get_available_updates(self) -> AvailableUpdates:
         return AvailableUpdates(im=FirmwareUpdate(fw_rev="2.3", available_fw_rev="2.3"))
@@ -97,15 +98,26 @@ class RecordingClient:
     async def set_nightlight(self, mode: int, brightness: int) -> None:
         self._record("set_nightlight", mode, brightness)
 
-    async def set_nightlight_temperature(
-        self, kelvin: int, brightness: int = 100, on: bool = True
+    async def set_color_temperature(
+        self,
+        light: int,
+        kelvin: int,
+        brightness: int = 100,
+        on: bool = True,
+        count: int = 1,
     ) -> None:
-        self._record("set_nightlight_temperature", kelvin, brightness, on)
+        self._record("set_color_temperature", light, kelvin, brightness, on)
 
-    async def set_nightlight_color(
-        self, hue: int, saturation: int, brightness: int = 100, on: bool = True
+    async def set_color_hsv(
+        self,
+        light: int,
+        hue: int,
+        saturation: int,
+        brightness: int = 100,
+        on: bool = True,
+        count: int = 1,
     ) -> None:
-        self._record("set_nightlight_color", hue, saturation, brightness, on)
+        self._record("set_color_hsv", light, hue, saturation, brightness, on)
 
     async def restart(self) -> None:
         self._record("restart")
@@ -139,7 +151,7 @@ class RecordingClient:
     async def perform_ota_update(self, target: int, method: int) -> None:
         self._record("perform_ota_update", target, method)
         if self._ota_result is not None:
-            self._ota_result(OtaResult(device=target, status=1))
+            self._ota_result(OtaResult(device_type=target, status=1))
 
 
 _CALLS: list[tuple[str, tuple[Any, ...]]] = []
@@ -251,7 +263,7 @@ def test_nightlight_temp_sets_temperature(
     """`nightlight aura temp 3500` sets the nightlight white temperature."""
     result = runner.invoke(app, ["nightlight", "aura", "temp", "3500", "--bri", "90"])
     assert result.exit_code == 0
-    assert ("set_nightlight_temperature", (3500, 90, True)) in fake_client
+    assert ("set_color_temperature", (5, 3500, 90, True)) in fake_client
 
 
 def test_nightlight_color_sets_hsv(
@@ -260,7 +272,7 @@ def test_nightlight_color_sets_hsv(
     """`nightlight aura color 200 90` sets the nightlight color via HSV."""
     result = runner.invoke(app, ["nightlight", "aura", "color", "200", "90"])
     assert result.exit_code == 0
-    assert ("set_nightlight_color", (200, 90, 100, True)) in fake_client
+    assert ("set_color_hsv", (5, 200, 90, 100, True)) in fake_client
 
 
 def test_name_set_calls_client(
@@ -288,12 +300,12 @@ def test_device_error_reported_cleanly(
     """A device-level error prints a message and exits, not a traceback."""
     from intecular_client import IntecularCommandError
 
-    async def boom(self: Any) -> None:
+    async def boom(self: Any, light: int) -> None:
         raise IntecularCommandError(
             "No color light at index 5; this device may not have an Aura."
         )
 
-    monkeypatch.setattr(RecordingClient, "get_nightlight_color", boom)
+    monkeypatch.setattr(RecordingClient, "get_color", boom)
     result = runner.invoke(app, ["nightlight", "aura", "status"])
     assert result.exit_code != 0
     assert "Aura" in result.output
@@ -303,22 +315,22 @@ def test_device_error_reported_cleanly(
 # --- device group ---------------------------------------------------------
 
 
-def test_firmware_check_renders(
+def test_ota_check_renders(
     fake_client: list[tuple[str, tuple[Any, ...]]],
 ) -> None:
-    """`device firmware check` reads available updates."""
-    result = runner.invoke(app, ["device", "firmware", "check"])
+    """`ota check` reads available updates."""
+    result = runner.invoke(app, ["ota", "check"])
     assert result.exit_code == 0
     assert "InvisOutlet" in result.output
 
 
-def test_firmware_update_performs_ota(
+def test_ota_update_performs_ota(
     fake_client: list[tuple[str, tuple[Any, ...]]],
 ) -> None:
-    """`device firmware update 1` starts an OTA and completes via the result."""
-    result = runner.invoke(app, ["device", "firmware", "update", "1"])
+    """`ota update deco` starts an OTA on the faceplate and completes."""
+    result = runner.invoke(app, ["ota", "update", "deco"])
     assert result.exit_code == 0
-    assert ("perform_ota_update", (1, 0)) in fake_client
+    assert ("perform_ota_update", (OtaTarget.INVISDECO, 0)) in fake_client
 
 
 def test_calibrate_climate(

@@ -26,6 +26,7 @@ from intecular_client.client import (
     CALLBACK_RESET_NETWORK,
     CALLBACK_RESTART,
     CALLBACK_SENSOR_DATA,
+    LIGHT_NIGHTLIGHT,
 )
 
 from .conftest import FakeSession, FakeWebSocket
@@ -151,41 +152,41 @@ async def test_nightlight(
     assert state.brightness == 75
 
 
-async def test_nightlight_temperature_and_get(
+async def test_set_color_temperature_and_get(
     connected_client: tuple[IntecularClient, FakeWebSocket],
 ) -> None:
-    """set_nightlight_temperature (17) and get_nightlight_color (18)."""
+    """set_color_temperature (17) and get_color (18)."""
     client, ws = connected_client
-    await client.set_nightlight_temperature(3500, brightness=90)
+    await client.set_color_temperature(LIGHT_NIGHTLIGHT, 3500, brightness=90)
     payload = _last(ws)
     assert payload["callbackName"] == 17
     assert payload["callbackArgs"] == [5, 2, [[1, 90, 3500]]]
 
     ws.responses[18] = [5, 2, [[1, 100, [200, 50], 4000]]]
-    state = await client.get_nightlight_color()
+    state = await client.get_color(LIGHT_NIGHTLIGHT)
     assert state.leds[0].hue == 200
     assert state.leds[0].temperature == 4000
 
 
-async def test_set_nightlight_color(
+async def test_set_color_hsv(
     connected_client: tuple[IntecularClient, FakeWebSocket],
 ) -> None:
-    """set_nightlight_color (17) should frame as mode 1 with [[state, bri, [hue, sat]]]."""
+    """set_color_hsv (17) should frame as mode 1 with [[state, bri, [hue, sat]]]."""
     client, ws = connected_client
-    await client.set_nightlight_color(200, 80, brightness=90)
+    await client.set_color_hsv(LIGHT_NIGHTLIGHT, 200, 80, brightness=90)
     payload = _last(ws)
     assert payload["callbackName"] == 17
     assert payload["callbackArgs"] == [5, 1, [[1, 90, [200, 80]]]]
 
 
-async def test_get_nightlight_color_missing_raises(
+async def test_get_color_missing_raises(
     connected_client: tuple[IntecularClient, FakeWebSocket],
 ) -> None:
-    """get_nightlight_color raises a clear error when no light data comes back."""
+    """get_color raises a clear error when no light data comes back."""
     client, ws = connected_client
     ws.responses[18] = []  # device returns nothing (e.g. no Aura attached)
     with pytest.raises(IntecularCommandError):
-        await client.get_nightlight_color()
+        await client.get_color(LIGHT_NIGHTLIGHT)
 
 
 async def test_available_updates(

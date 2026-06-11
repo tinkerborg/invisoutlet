@@ -12,6 +12,7 @@ from . import (
     discover,
     name,
     nightlight,
+    ota,
     outlet,
     watch,
 )
@@ -26,6 +27,7 @@ def register_all(app: object) -> None:
     deco.register(app)
     name.register(app)
     discover.register(app)
+    ota.register(app)
     watch.register(app)
 
 

@@ -60,7 +60,6 @@ CALLBACK_OCCUPANCY_CALIBRATION = 26
 CALLBACK_TEMP_HUMIDITY_CALIBRATION = 28
 
 
-
 class OtaTarget(IntEnum):
     """Which device an OTA firmware update targets (callback 21).
 
@@ -102,20 +101,19 @@ _OTA_STALL_TIMEOUT = 60.0
 # Intecular firmware-update (OTA) check service. Queried per module over HTTP to
 # learn the latest revision, its download URL and the release notes. The path is
 # ``/<module>/<product>/<hw_rev>/<current_fw>``.
-_OTA_CHECK_BASE = (
-    "https://oxv6el7gq2dyr57ljslfu5osrq0nhohh.lambda-url.us-east-1.on.aws"
-)
+_OTA_CHECK_BASE = "https://oxv6el7gq2dyr57ljslfu5osrq0nhohh.lambda-url.us-east-1.on.aws"
 _OTA_MODULE = {OtaTarget.INVISOUTLET: "IM", OtaTarget.INVISDECO: "PM"}
-# Device model name -> product code in the OTA-check URL. The codes are not
-# reported by the device, so models absent here have no known update channel and
-# :meth:`IntecularClient.check_firmware` returns ``None`` for them.
-_OTA_PRODUCT_CODES = {"InvisOutlet": "IVO1", "InvisDeco": "PRP1"}
+# Device model (or faceplate variant) -> product code in the OTA-check URL. The
+# codes aren't reported by the device, so anything absent here has no known update
+# channel and :meth:`IntecularClient.check_firmware` returns ``None``. Faceplates
+# share the model name "InvisDeco", so the colour Aura is keyed by its variant.
+_OTA_PRODUCT_CODES = {"InvisOutlet": "IVO1", "InvisDeco": "PRP1", "Aura": "LIP1"}
 
 
-# Color-light array selector for the nightlight (the first ``callbackArgs``
-# element of callbacks 17/18), confirmed by the API docs. Internal — callers use
-# the ``*_nightlight_color`` methods rather than addressing the array directly.
-_LIGHT_NIGHTLIGHT = 5
+# Light-array selectors (the first ``callbackArgs`` element of callbacks 17/18):
+# the nightlight (9 LEDs) and the indicator (7 LEDs).
+LIGHT_INDICATOR = 7
+LIGHT_NIGHTLIGHT = 5
 
 # Auto-reconnect backoff bounds (seconds).
 _RECONNECT_INITIAL_DELAY = 1.0
@@ -315,11 +313,14 @@ class IntecularClient:
         """Exit async context manager."""
         await self.close()
 
-    def on_sensor_data(self, callback: Callable[[SensorData], None]) -> Callable[[], None]:
+    def on_sensor_data(
+        self, callback: Callable[[SensorData], None]
+    ) -> Callable[[], None]:
         """Register a callback for sensor data updates.
 
         Returns a function to unregister the callback.
         """
+
         def _wrapper(msg: dict[str, Any]) -> None:
             args = msg.get("payload", {}).get("callbackArgs", [])
             if len(args) >= 2 and isinstance(args[1], dict):
@@ -367,9 +368,7 @@ class IntecularClient:
             on: True to turn on, False to turn off.
 
         """
-        return await self._send_request(
-            CALLBACK_OUTLET_SET, [outlet, int(on)], timeout
-        )
+        return await self._send_request(CALLBACK_OUTLET_SET, [outlet, int(on)], timeout)
 
     async def get_config(self, timeout: float = 5.0) -> DeviceConfig:
         """Request device configuration."""
@@ -453,9 +452,7 @@ class IntecularClient:
             mqtt_password=mqtt_password,
             mqtt_qos=mqtt_qos,
         )
-        return await self._send_request(
-            CALLBACK_CONFIG_SET, [config.to_raw()], timeout
-        )
+        return await self._send_request(CALLBACK_CONFIG_SET, [config.to_raw()], timeout)
 
     async def get_device_info(self, timeout: float = 5.0) -> DeviceInfo:
         """Request device information."""
@@ -463,9 +460,7 @@ class IntecularClient:
         args = response.get("payload", {}).get("callbackArgs", {})
         return DeviceInfo.from_raw(args, self.host, self.port)
 
-    async def get_accessory_names(
-        self, timeout: float = 5.0
-    ) -> list[AccessoryName]:
+    async def get_accessory_names(self, timeout: float = 5.0) -> list[AccessoryName]:
         """Request the user-assigned accessory names."""
         response = await self._send_request(
             CALLBACK_ACCESSORY_NAMES_GET, timeout=timeout
@@ -505,9 +500,7 @@ class IntecularClient:
 
     async def get_outlet_status(self, timeout: float = 5.0) -> OutletStatus:
         """Fetch the on/off state of each outlet."""
-        response = await self._send_request(
-            CALLBACK_OUTLET_STATUS, timeout=timeout
-        )
+        response = await self._send_request(CALLBACK_OUTLET_STATUS, timeout=timeout)
         args = response.get("payload", {}).get("callbackArgs", [])
         return OutletStatus.from_raw(args)
 
@@ -527,44 +520,61 @@ class IntecularClient:
 
     async def get_nightlight(self, timeout: float = 5.0) -> NightlightState:
         """Fetch the current nightlight state."""
-        response = await self._send_request(
-            CALLBACK_NIGHTLIGHT_STATUS, timeout=timeout
-        )
+        response = await self._send_request(CALLBACK_NIGHTLIGHT_STATUS, timeout=timeout)
         args = response.get("payload", {}).get("callbackArgs", [])
         return NightlightState.from_raw(args)
 
-    async def set_nightlight_color(
+    async def set_color_hsv(
         self,
+        light: int,
         hue: int,
         saturation: int,
         brightness: int = 100,
         on: bool = True,
+        count: int = 1,
         timeout: float = 5.0,
     ) -> dict[str, Any]:
-        """Set the nightlight color array to an HSV color (Aura faceplate)."""
-        led = ColorLedEntry(
-            state=on, brightness=brightness, hue=hue, saturation=saturation
-        )
-        return await self._set_color_hsv(_LIGHT_NIGHTLIGHT, [led], timeout)
+        """Set a colour array (``light`` selector) to an HSV colour.
 
-    async def set_nightlight_temperature(
+        A single entry broadcasts across the array, but the firmware animates the
+        fill; pass ``count`` = the number of LEDs to set them all at once instead.
+        """
+        leds = [
+            ColorLedEntry(
+                state=on, brightness=brightness, hue=hue, saturation=saturation
+            )
+            for _ in range(count)
+        ]
+        return await self._set_color_hsv(light, leds, timeout)
+
+    async def set_color_temperature(
         self,
+        light: int,
         kelvin: int,
         brightness: int = 100,
         on: bool = True,
+        count: int = 1,
         timeout: float = 5.0,
     ) -> dict[str, Any]:
-        """Set the nightlight color array to a white temperature (Aura faceplate)."""
-        led = ColorLedEntry(state=on, brightness=brightness, temperature=kelvin)
-        return await self._set_color_temperature(_LIGHT_NIGHTLIGHT, [led], timeout)
+        """Set a colour array (``light`` selector) to a white temperature.
 
-    async def get_nightlight_color(self, timeout: float = 5.0) -> ColorLightState:
-        """Fetch the nightlight color array's state (Aura faceplate).
-
-        Raises ``IntecularCommandError`` if the device returns no light data,
-        e.g. there is no color nightlight (no Aura attached).
+        Unlike the HSV path, the firmware does not broadcast a single temperature
+        entry across the array, so pass ``count`` = the number of LEDs to light
+        them all (one identical entry per LED).
         """
-        return await self._get_color(_LIGHT_NIGHTLIGHT, timeout)
+        leds = [
+            ColorLedEntry(state=on, brightness=brightness, temperature=kelvin)
+            for _ in range(count)
+        ]
+        return await self._set_color_temperature(light, leds, timeout)
+
+    async def get_color(self, light: int, timeout: float = 5.0) -> ColorLightState:
+        """Fetch a colour array's state (``light`` selector).
+
+        Raises ``IntecularCommandError`` if the device returns no data for that
+        selector (e.g. no Aura attached).
+        """
+        return await self._get_color(light, timeout)
 
     async def _set_color_temperature(
         self, light: int, leds: list[ColorLedEntry], timeout: float = 5.0
@@ -584,13 +594,9 @@ class IntecularClient:
             CALLBACK_COLOR_LIGHT_TEMPERATURE, state.to_hsv_raw(), timeout
         )
 
-    async def _get_color(
-        self, light: int, timeout: float = 5.0
-    ) -> ColorLightState:
+    async def _get_color(self, light: int, timeout: float = 5.0) -> ColorLightState:
         """Fetch a color light's state (callback 18)."""
-        response = await self._send_request(
-            CALLBACK_COLOR_LIGHT, [light], timeout
-        )
+        response = await self._send_request(CALLBACK_COLOR_LIGHT, [light], timeout)
         args = response.get("payload", {}).get("callbackArgs", [])
         if not isinstance(args, list) or len(args) < 3:
             raise IntecularCommandError(
@@ -598,9 +604,7 @@ class IntecularClient:
             )
         return ColorLightState.from_raw(args)
 
-    async def get_available_updates(
-        self, timeout: float = 5.0
-    ) -> AvailableUpdates:
+    async def get_available_updates(self, timeout: float = 5.0) -> AvailableUpdates:
         """Request available firmware updates."""
         response = await self._send_request(CALLBACK_UPDATES_GET, timeout=timeout)
         args = response.get("payload", {}).get("callbackArgs", {})
@@ -612,15 +616,18 @@ class IntecularClient:
         model: str,
         hw_rev: str,
         current_fw_rev: str,
+        variant: str | None = None,
         timeout: float = 10.0,
     ) -> FirmwareRelease | None:
         """Look up the latest firmware for a module from the update service.
 
+        ``variant`` (a faceplate's ``type``, e.g. ``"Aura"``) takes precedence
+        over ``model`` for the product code, since faceplates share a model name.
         Returns ``None`` for a model with no known product code (i.e. no known
         update channel). Unlike :meth:`get_available_updates`, this also yields
         the download URL and release notes.
         """
-        product = _OTA_PRODUCT_CODES.get(model)
+        product = _OTA_PRODUCT_CODES.get(variant) or _OTA_PRODUCT_CODES.get(model)
         if product is None:
             return None
         if self._session is None:
@@ -654,23 +661,17 @@ class IntecularClient:
         result arrive asynchronously via ``on_ota_progress`` and
         ``on_ota_result``.
         """
-        await self._send_command_noreply(
-            CALLBACK_OTA_PERFORM, [int(target), method]
-        )
+        await self._send_command_noreply(CALLBACK_OTA_PERFORM, [int(target), method])
         self._ota_seen_progress.discard(target)
         self._arm_ota_stall(target)
 
     async def restart_invisdeco(self, timeout: float = 5.0) -> dict[str, Any]:
         """Restart the attached InvisDeco sub-device."""
-        return await self._send_request(
-            CALLBACK_RESTART_INVISDECO, timeout=timeout
-        )
+        return await self._send_request(CALLBACK_RESTART_INVISDECO, timeout=timeout)
 
     async def reset_invisdeco(self, timeout: float = 5.0) -> dict[str, Any]:
         """Reset the attached InvisDeco sub-device."""
-        return await self._send_request(
-            CALLBACK_RESET_INVISDECO, timeout=timeout
-        )
+        return await self._send_request(CALLBACK_RESET_INVISDECO, timeout=timeout)
 
     async def calibrate_occupancy(
         self, duration_seconds: int, timeout: float = 5.0
@@ -763,8 +764,10 @@ class IntecularClient:
             # running so it spans into that phase rather than ending here.
             return
         target = target_for_device_type(result.device_type)
-        if target is not None and not result.success and (
-            target not in self._ota_seen_progress
+        if (
+            target is not None
+            and not result.success
+            and (target not in self._ota_seen_progress)
         ):
             # Spurious pre-progress status-0: suppress, leaving the stall timer
             # running so a genuine silent failure is still caught.
@@ -834,7 +837,9 @@ class IntecularClient:
         packet_id = random.randint(100000, 999999)
         message = self._build_message(packet_id, callback_name, callback_args)
 
-        future: asyncio.Future[dict[str, Any]] = asyncio.get_event_loop().create_future()
+        future: asyncio.Future[dict[str, Any]] = (
+            asyncio.get_event_loop().create_future()
+        )
         self._pending_requests[packet_id] = future
 
         try:
@@ -915,7 +920,9 @@ class IntecularClient:
                 try:
                     listener(msg)
                 except Exception:
-                    _LOGGER.exception("Error in listener for callbackName=%s", callback_name)
+                    _LOGGER.exception(
+                        "Error in listener for callbackName=%s", callback_name
+                    )
 
     def _add_listener(
         self, callback_name: int, callback: Callable[[dict[str, Any]], None]

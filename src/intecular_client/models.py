@@ -323,19 +323,28 @@ class ColorLightState:
     def from_raw(cls, args: list[Any]) -> ColorLightState:
         """Parse a callback 18 response.
 
-        Shape: ``[light, mode, [[state, brightness, [hue, sat], kelvin], ...]]``.
+        Shape: ``[light, mode, [<led>, ...]]``. An LED entry is
+        ``[state, brightness, ...]`` whose trailing fields vary by array: an
+        ``[hue, sat]`` pair and/or a kelvin int may appear, in any combination
+        (the nightlight reports both; the indicator reports fewer).
         """
         light, mode, entries = args[0], args[1], args[2]
         leds: list[ColorLedEntry] = []
         for entry in entries:
-            state, brightness, hsv, temperature = entry
+            state, brightness, *rest = entry
+            hue = saturation = temperature = None
+            for value in rest:
+                if isinstance(value, list) and len(value) >= 2:
+                    hue, saturation = int(value[0]), int(value[1])
+                elif isinstance(value, (int, float)):
+                    temperature = int(value)
             leds.append(
                 ColorLedEntry(
                     state=bool(state),
                     brightness=int(brightness),
-                    hue=int(hsv[0]),
-                    saturation=int(hsv[1]),
-                    temperature=int(temperature),
+                    hue=hue,
+                    saturation=saturation,
+                    temperature=temperature,
                 )
             )
         return cls(light=int(light), mode=int(mode), leds=leds)

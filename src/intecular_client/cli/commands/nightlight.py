@@ -10,6 +10,7 @@ from __future__ import annotations
 import typer
 
 from intecular_client import IntecularClient
+from intecular_client.client import LIGHT_NIGHTLIGHT
 
 from .. import render
 from ..state import run_with_client
@@ -81,7 +82,7 @@ def color(
     """Set the color (HSV)."""
     run_with_client(
         ctx.obj,
-        lambda c: c.set_nightlight_color(hue, saturation, bri, not off),
+        lambda c: c.set_color_hsv(LIGHT_NIGHTLIGHT, hue, saturation, bri, not off),
     )
 
 
@@ -97,7 +98,7 @@ def temp(
     """Set a white color temperature."""
     run_with_client(
         ctx.obj,
-        lambda c: c.set_nightlight_temperature(kelvin, bri, not off),
+        lambda c: c.set_color_temperature(LIGHT_NIGHTLIGHT, kelvin, bri, not off),
     )
 
 
@@ -129,4 +130,4 @@ async def _status(client: IntecularClient) -> None:
 
 
 async def _aura_status(client: IntecularClient) -> None:
-    render.render_color(await client.get_nightlight_color())
+    render.render_color(await client.get_color(LIGHT_NIGHTLIGHT))
