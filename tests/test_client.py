@@ -1,4 +1,4 @@
-"""Tests for the IntecularClient WebSocket client."""
+"""Tests for the InvisOutletClient WebSocket client."""
 
 from __future__ import annotations
 
@@ -6,19 +6,19 @@ import asyncio
 
 import pytest
 
-from intecular_client import (
+from invisoutlet import (
     AccessoryName,
-    IntecularClient,
-    IntecularCommandError,
-    IntecularConnectionError,
-    IntecularTimeoutError,
+    InvisOutletClient,
+    InvisOutletCommandError,
+    InvisOutletConnectionError,
+    InvisOutletTimeoutError,
     OtaProgress,
     OtaResult,
     OtaTarget,
     OutletStatus,
     SensorData,
 )
-from intecular_client.client import (
+from invisoutlet.client import (
     CALLBACK_FACTORY_RESET,
     CALLBACK_OTA_PROGRESS,
     CALLBACK_OTA_RESULT,
@@ -38,7 +38,7 @@ def _last(ws: FakeWebSocket) -> dict:
 
 
 async def test_set_outlet_framing(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """set_outlet should send callbackName 10 with [outlet, 0/1]."""
     client, ws = connected_client
@@ -50,7 +50,7 @@ async def test_set_outlet_framing(
 
 
 async def test_get_config(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """get_config should parse the nested response into a DeviceConfig."""
     client, ws = connected_client
@@ -61,7 +61,7 @@ async def test_get_config(
 
 
 async def test_set_config_builds_nested_payload(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """set_config should send only the provided fields, nested correctly."""
     client, ws = connected_client
@@ -74,7 +74,7 @@ async def test_set_config_builds_nested_payload(
 
 
 async def test_get_device_info(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """get_device_info should parse IM and inject host/port."""
     client, ws = connected_client
@@ -86,7 +86,7 @@ async def test_get_device_info(
 
 
 async def test_accessory_names_round_trip(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """get/set accessory names should use the documented framing."""
     client, ws = connected_client
@@ -114,7 +114,7 @@ async def test_accessory_names_round_trip(
     ],
 )
 async def test_no_reply_commands(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
     method: str,
     callback: int,
 ) -> None:
@@ -128,7 +128,7 @@ async def test_no_reply_commands(
 
 
 async def test_get_outlet_status(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """get_outlet_status should parse the positional array."""
     client, ws = connected_client
@@ -139,7 +139,7 @@ async def test_get_outlet_status(
 
 
 async def test_nightlight(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """set/get nightlight should use [mode, brightness]."""
     client, ws = connected_client
@@ -153,7 +153,7 @@ async def test_nightlight(
 
 
 async def test_set_color_temperature_and_get(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """set_color_temperature (17) and get_color (18)."""
     client, ws = connected_client
@@ -169,7 +169,7 @@ async def test_set_color_temperature_and_get(
 
 
 async def test_set_color_hsv(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """set_color_hsv (17) should frame as mode 1 with [[state, bri, [hue, sat]]]."""
     client, ws = connected_client
@@ -180,17 +180,17 @@ async def test_set_color_hsv(
 
 
 async def test_get_color_missing_raises(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """get_color raises a clear error when no light data comes back."""
     client, ws = connected_client
     ws.responses[18] = []  # device returns nothing (e.g. no Aura attached)
-    with pytest.raises(IntecularCommandError):
+    with pytest.raises(InvisOutletCommandError):
         await client.get_color(LIGHT_NIGHTLIGHT)
 
 
 async def test_available_updates(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """get_available_updates should parse the IM/PM revisions."""
     client, ws = connected_client
@@ -200,7 +200,7 @@ async def test_available_updates(
 
 
 async def test_perform_ota_update_framing(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """perform_ota_update should send [target, method]."""
     client, ws = connected_client
@@ -215,7 +215,7 @@ def _push_ota(ws: FakeWebSocket, callback: int, args: list[int]) -> None:
 
 
 async def test_ota_result_suppresses_spurious_pre_progress(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """A status-0 result before any progress is the firmware's junk start signal."""
     client, ws = connected_client
@@ -227,7 +227,7 @@ async def test_ota_result_suppresses_spurious_pre_progress(
 
 
 async def test_ota_result_forwards_failure_after_progress(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """A status-0 result once progress has started is a genuine failure."""
     client, ws = connected_client
@@ -243,7 +243,7 @@ async def test_ota_result_forwards_failure_after_progress(
 
 
 async def test_ota_result_forwards_success(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """A status-1 result is always forwarded as a success."""
     client, ws = connected_client
@@ -256,7 +256,7 @@ async def test_ota_result_forwards_success(
 
 
 async def test_ota_result_suppresses_www_subphase(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """A device_type-3 (WWW partition) success is a sub-phase, not terminal."""
     client, ws = connected_client
@@ -273,12 +273,12 @@ async def test_ota_result_suppresses_www_subphase(
 
 
 async def test_ota_stall_synthesizes_failure(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """No progress within the stall timeout yields a synthesized failure result."""
     client, ws = connected_client
-    monkeypatch.setattr("intecular_client.client._OTA_STALL_TIMEOUT", 0.05)
+    monkeypatch.setattr("invisoutlet.client._OTA_STALL_TIMEOUT", 0.05)
     results: list[OtaResult] = []
     client.on_ota_result(results.append)
     await client.perform_ota_update(OtaTarget.INVISDECO, 0)
@@ -289,12 +289,12 @@ async def test_ota_stall_synthesizes_failure(
 
 
 async def test_ota_progress_resets_stall_timer(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Each progress push pushes the stall deadline back."""
     client, ws = connected_client
-    monkeypatch.setattr("intecular_client.client._OTA_STALL_TIMEOUT", 0.08)
+    monkeypatch.setattr("invisoutlet.client._OTA_STALL_TIMEOUT", 0.08)
     results: list[OtaResult] = []
     client.on_ota_result(results.append)
     await client.perform_ota_update(OtaTarget.INVISDECO, 0)
@@ -307,7 +307,7 @@ async def test_ota_progress_resets_stall_timer(
 
 
 async def test_calibrate_temp_humidity_converts_to_millis(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """Calibration values should be sent in milli-units."""
     client, ws = connected_client
@@ -316,7 +316,7 @@ async def test_calibrate_temp_humidity_converts_to_millis(
 
 
 async def test_calibrate_occupancy(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """Occupancy calibration should send [durationSeconds]."""
     client, ws = connected_client
@@ -325,34 +325,34 @@ async def test_calibrate_occupancy(
 
 
 async def test_puback_failure_raises(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
-    """A PUBACK of 0 should raise IntecularCommandError."""
+    """A PUBACK of 0 should raise InvisOutletCommandError."""
     client, ws = connected_client
     ws.puback = 0
-    with pytest.raises(IntecularCommandError):
+    with pytest.raises(InvisOutletCommandError):
         await client.set_outlet(1, True)
 
 
 async def test_timeout_raises(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
-    """A response that never arrives should raise IntecularTimeoutError."""
+    """A response that never arrives should raise InvisOutletTimeoutError."""
     client, ws = connected_client
     ws.no_reply.add(9)  # callback that normally expects a reply
-    with pytest.raises(IntecularTimeoutError):
+    with pytest.raises(InvisOutletTimeoutError):
         await client.get_outlet_status(timeout=0.05)
 
 
 async def test_not_connected_raises() -> None:
-    """Sending without a connection should raise IntecularConnectionError."""
-    client = IntecularClient("device.local")
-    with pytest.raises(IntecularConnectionError):
+    """Sending without a connection should raise InvisOutletConnectionError."""
+    client = InvisOutletClient("device.local")
+    with pytest.raises(InvisOutletConnectionError):
         await client.set_outlet(1, True)
 
 
 async def test_sensor_data_push_dispatch(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """on_sensor_data should fire for server-pushed sensor messages."""
     client, ws = connected_client
@@ -387,7 +387,7 @@ async def test_sensor_data_push_dispatch(
 
 
 async def test_on_outlet_status_push(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """on_outlet_status should fire for server-pushed outlet messages."""
     client, ws = connected_client
@@ -410,14 +410,14 @@ async def test_on_outlet_status_push(
 
 async def test_auto_reconnect(monkeypatch: pytest.MonkeyPatch) -> None:
     """A dropped connection is re-established and listeners keep firing."""
-    monkeypatch.setattr("intecular_client.client._RECONNECT_INITIAL_DELAY", 0.01)
+    monkeypatch.setattr("invisoutlet.client._RECONNECT_INITIAL_DELAY", 0.01)
 
     session = FakeSession()
     ws1, ws2 = FakeWebSocket(), FakeWebSocket()
     session.queue_ws(ws1)
     session.queue_ws(ws2)
 
-    client = IntecularClient("device.local")
+    client = InvisOutletClient("device.local")
     client._session = session  # type: ignore[assignment]
 
     received: list[SensorData] = []
@@ -456,7 +456,7 @@ async def test_auto_reconnect(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_ota_push_dispatch(
-    connected_client: tuple[IntecularClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
     """on_ota_progress and on_ota_result should fire for pushed events."""
     client, ws = connected_client

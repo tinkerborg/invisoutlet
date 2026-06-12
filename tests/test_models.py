@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from intecular_client.models import (
+from invisoutlet.models import (
     AccessoryName,
     AvailableUpdates,
     ColorLedEntry,

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import typer
 
-from intecular_client import IntecularClient
-from intecular_client.client import LIGHT_NIGHTLIGHT
+from invisoutlet import InvisOutletClient
+from invisoutlet.client import LIGHT_NIGHTLIGHT
 
 from .. import render
 from ..state import run_with_client
@@ -108,26 +108,26 @@ def aura_status(ctx: typer.Context) -> None:
     run_with_client(ctx.obj, _aura_status)
 
 
-async def _on(client: IntecularClient) -> None:
+async def _on(client: InvisOutletClient) -> None:
     state = await client.get_nightlight()
     await client.set_nightlight(1, state.brightness or 100)
     render.console.print("[green]✓[/green] Nightlight on.")
 
 
-async def _off_(client: IntecularClient) -> None:
+async def _off_(client: InvisOutletClient) -> None:
     state = await client.get_nightlight()
     await client.set_nightlight(0, state.brightness)
     render.console.print("[green]✓[/green] Nightlight off.")
 
 
-async def _brightness(client: IntecularClient, level: int) -> None:
+async def _brightness(client: InvisOutletClient, level: int) -> None:
     await client.set_nightlight(1, level)
     render.console.print(f"[green]✓[/green] Nightlight brightness {level}.")
 
 
-async def _status(client: IntecularClient) -> None:
+async def _status(client: InvisOutletClient) -> None:
     render.render_nightlight(await client.get_nightlight())
 
 
-async def _aura_status(client: IntecularClient) -> None:
+async def _aura_status(client: InvisOutletClient) -> None:
     render.render_color(await client.get_color(LIGHT_NIGHTLIGHT))

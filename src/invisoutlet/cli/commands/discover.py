@@ -6,7 +6,7 @@ import asyncio
 
 import typer
 
-from intecular_client import discover
+from invisoutlet import discover
 
 from .. import render
 
@@ -18,7 +18,7 @@ def register(app: typer.Typer) -> None:
     def discover_devices(
         timeout: float = typer.Option(5.0, "--timeout", help="Scan duration in seconds."),
     ) -> None:
-        """Scan the local network for Intecular devices via mDNS."""
+        """Scan the local network for InvisOutlet devices via mDNS."""
         # Discovery needs no device connection, so it bypasses run_with_client.
         async def _run() -> None:
             render.render_discovered(await discover(timeout))

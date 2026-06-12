@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import typer
 
-from intecular_client import IntecularClient, IntecularError
+from invisoutlet import InvisOutletClient, InvisOutletError
 
 from .config import DefaultDevice, get_default_device, set_default_device
 from .picker import pick_device
@@ -59,7 +59,7 @@ async def resolve_host(state: CLIState) -> str:
 
 
 def run_with_client(
-    state: CLIState, body: Callable[[IntecularClient], Awaitable[None]]
+    state: CLIState, body: Callable[[InvisOutletClient], Awaitable[None]]
 ) -> None:
     """Open a client, run an async command body, then close cleanly.
 
@@ -69,14 +69,14 @@ def run_with_client(
 
     async def _main() -> None:
         host = await resolve_host(state)
-        async with IntecularClient(host) as client:
+        async with InvisOutletClient(host) as client:
             await body(client)
 
     try:
         asyncio.run(_main())
     except KeyboardInterrupt:
         pass
-    except IntecularError as err:
+    except InvisOutletError as err:
         console.print(f"[red]Error:[/red] {err}")
         raise typer.Exit(code=1) from err
 

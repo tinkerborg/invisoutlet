@@ -31,12 +31,12 @@ with mkdocs_gen_files.open("stylesheets/extra.css", "w") as fd:
     fd.write(_MEMBER_NESTING_CSS)
 
 with mkdocs_gen_files.open("api.md", "w") as fd:
-    fd.write("# API reference\n\n::: intecular_client\n")
+    fd.write("# API reference\n\n::: invisoutlet\n")
 
 with mkdocs_gen_files.open("cli.md", "w") as fd:
     fd.write(
         "# CLI reference\n\n"
         "::: mkdocs-click\n"
-        "    :module: intecular_client.cli.app\n"
+        "    :module: invisoutlet.cli.app\n"
         "    :command: cli\n"
     )

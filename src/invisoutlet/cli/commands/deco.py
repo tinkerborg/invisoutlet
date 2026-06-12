@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from intecular_client import IntecularClient
+from invisoutlet import InvisOutletClient
 
 from .. import render
 from ..state import confirm_destructive, run_with_client
@@ -55,23 +55,23 @@ def climate(
     run_with_client(ctx.obj, lambda c: _calibrate_climate(c, temperature, humidity))
 
 
-async def _restart(client: IntecularClient) -> None:
+async def _restart(client: InvisOutletClient) -> None:
     await client.restart_invisdeco()
     render.console.print("[green]✓[/green] InvisDeco restart command sent.")
 
 
-async def _reset(client: IntecularClient) -> None:
+async def _reset(client: InvisOutletClient) -> None:
     await client.reset_invisdeco()
     render.console.print("[green]✓[/green] InvisDeco reset command sent.")
 
 
-async def _calibrate_occupancy(client: IntecularClient, seconds: int) -> None:
+async def _calibrate_occupancy(client: InvisOutletClient, seconds: int) -> None:
     await client.calibrate_occupancy(seconds)
     render.console.print(f"[green]✓[/green] Occupancy calibration started for {seconds}s.")
 
 
 async def _calibrate_climate(
-    client: IntecularClient, temperature: float, humidity: float
+    client: InvisOutletClient, temperature: float, humidity: float
 ) -> None:
     await client.calibrate_temp_humidity(temperature, humidity)
     render.console.print(f"[green]✓[/green] Calibrated to {temperature} °C / {humidity}% RH.")

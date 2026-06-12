@@ -1,7 +1,7 @@
 """The Typer application and global options.
 
-This module defines the ``app`` referenced by the ``intecular`` console entry
-point. Commands live in :mod:`intecular_client.cli.commands` and are attached
+This module defines the ``app`` referenced by the ``invis`` console entry
+point. Commands live in :mod:`invisoutlet.cli.commands` and are attached
 here via each module's ``register`` function.
 """
 
@@ -15,8 +15,8 @@ from .commands import register_all
 from .state import CLIState
 
 app = typer.Typer(
-    name="intecular",
-    help="Command-line tool for Intecular smart outlets.",
+    name="invis",
+    help="Command-line tool for InvisOutlet smart outlets.",
     rich_markup_mode="rich",
     no_args_is_help=True,
     add_completion=False,
@@ -28,7 +28,7 @@ def _version_callback(value: bool) -> None:
     if not value:
         return
     try:
-        typer.echo(version("intecular-client"))
+        typer.echo(version("invisoutlet"))
     except PackageNotFoundError:
         typer.echo("unknown")
     raise typer.Exit

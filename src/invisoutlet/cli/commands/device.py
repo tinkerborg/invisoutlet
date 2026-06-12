@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from intecular_client import IntecularClient
+from invisoutlet import InvisOutletClient
 
 from .. import render
 from ..state import confirm_destructive, run_with_client
@@ -53,24 +53,24 @@ def factory(ctx: typer.Context) -> None:
     run_with_client(ctx.obj, _factory_reset)
 
 
-async def _info(client: IntecularClient) -> None:
+async def _info(client: InvisOutletClient) -> None:
     render.render_info(await client.get_device_info())
 
 
-async def _config(client: IntecularClient) -> None:
+async def _config(client: InvisOutletClient) -> None:
     render.render_config(await client.get_config())
 
 
-async def _restart(client: IntecularClient) -> None:
+async def _restart(client: InvisOutletClient) -> None:
     await client.restart()
     render.console.print("[green]✓[/green] Restart command sent.")
 
 
-async def _reset_network(client: IntecularClient) -> None:
+async def _reset_network(client: InvisOutletClient) -> None:
     await client.reset_network()
     render.console.print("[green]✓[/green] Network reset command sent.")
 
 
-async def _factory_reset(client: IntecularClient) -> None:
+async def _factory_reset(client: InvisOutletClient) -> None:
     await client.factory_reset()
     render.console.print("[green]✓[/green] Factory reset command sent.")

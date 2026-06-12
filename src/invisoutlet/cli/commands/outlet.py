@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from intecular_client import IntecularClient
+from invisoutlet import InvisOutletClient
 
 from .. import render
 from ..state import run_with_client
@@ -43,12 +43,12 @@ def status(ctx: typer.Context) -> None:
     run_with_client(ctx.obj, _status)
 
 
-async def _set(client: IntecularClient, outlet: int, on: bool) -> None:
+async def _set(client: InvisOutletClient, outlet: int, on: bool) -> None:
     await client.set_outlet(outlet, on)
     render.console.print(
         f"[green]✓[/green] Outlet {outlet} turned {'on' if on else 'off'}."
     )
 
 
-async def _status(client: IntecularClient) -> None:
+async def _status(client: InvisOutletClient) -> None:
     render.render_status(await client.get_outlet_status())

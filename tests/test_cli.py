@@ -1,4 +1,4 @@
-"""Tests for the Typer-based ``intecular`` CLI.
+"""Tests for the Typer-based ``invis`` CLI.
 
 The client is replaced by a recording fake (an async context manager returning
 canned models) so these tests cover argument parsing, command wiring and
@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from intecular_client import (
+from invisoutlet import (
     AccessoryName,
     AvailableUpdates,
     ColorLightState,
@@ -25,15 +25,15 @@ from intecular_client import (
     OtaTarget,
     OutletStatus,
 )
-from intecular_client.cli import config, picker, state
-from intecular_client.cli.app import app
-from intecular_client.cli.commands import default as default_module
-from intecular_client.cli.formatters import (
+from invisoutlet.cli import config, picker, state
+from invisoutlet.cli.app import app
+from invisoutlet.cli.commands import default as default_module
+from invisoutlet.cli.formatters import (
     fmt_distance,
     fmt_pressure,
     fmt_temperature,
 )
-from intecular_client.models import OtaResult
+from invisoutlet.models import OtaResult
 
 runner = CliRunner()
 
@@ -167,9 +167,9 @@ def fake_client(
     the discovery picker; tests that exercise the picker clear it first.
     """
     _CALLS.clear()
-    monkeypatch.setenv("INTECULAR_CLI_CONFIG", str(tmp_path / "cli.json"))
-    monkeypatch.setattr(state, "IntecularClient", RecordingClient)
-    monkeypatch.setattr(default_module, "IntecularClient", RecordingClient)
+    monkeypatch.setenv("INVIS_CLI_CONFIG", str(tmp_path / "cli.json"))
+    monkeypatch.setattr(state, "InvisOutletClient", RecordingClient)
+    monkeypatch.setattr(default_module, "InvisOutletClient", RecordingClient)
     config.set_default_device(
         config.DefaultDevice(host="10.0.0.99", name="Default", serial_number="SN-DEF")
     )
@@ -224,7 +224,7 @@ def test_name_list_renders() -> None:
 
 def test_render_config_tolerates_int_network_fields() -> None:
     """render_config must not crash when network fields arrive as ints (Rich needs str)."""
-    from intecular_client.cli import render
+    from invisoutlet.cli import render
 
     cfg = DeviceConfig(internet_ip=168430081, internet_main_dns=134744072)
     render.render_config(cfg)  # must not raise NotRenderableError
@@ -298,10 +298,10 @@ def test_device_error_reported_cleanly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A device-level error prints a message and exits, not a traceback."""
-    from intecular_client import IntecularCommandError
+    from invisoutlet import InvisOutletCommandError
 
     async def boom(self: Any, light: int) -> None:
-        raise IntecularCommandError(
+        raise InvisOutletCommandError(
             "No color light at index 5; this device may not have an Aura."
         )
 

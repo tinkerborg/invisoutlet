@@ -1,7 +1,7 @@
 """On-disk persistence for the CLI's default device.
 
-Stored as JSON at ``~/.intecular_cli.json`` (override with the
-``INTECULAR_CLI_CONFIG`` environment variable, primarily for tests).
+Stored as JSON at ``~/.invis_cli.json`` (override with the
+``INVIS_CLI_CONFIG`` environment variable, primarily for tests).
 """
 
 from __future__ import annotations
@@ -15,14 +15,14 @@ _DEFAULT_DEVICE_KEY = "default_device"
 
 
 def config_path() -> Path:
-    """Return the config file path, honouring ``INTECULAR_CLI_CONFIG``.
+    """Return the config file path, honouring ``INVIS_CLI_CONFIG``.
 
     Resolved on each call so tests can point it at a temporary file.
     """
-    override = os.environ.get("INTECULAR_CLI_CONFIG")
+    override = os.environ.get("INVIS_CLI_CONFIG")
     if override:
         return Path(override)
-    return Path.home() / ".intecular_cli.json"
+    return Path.home() / ".invis_cli.json"
 
 
 @dataclass

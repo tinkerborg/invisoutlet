@@ -1,4 +1,4 @@
-"""Data models for Intecular devices."""
+"""Data models for InvisOutlet devices."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ class WireModel:
 
 @dataclass
 class SensorData:
-    """Sensor readings from an Intecular outlet."""
+    """Sensor readings from an InvisOutlet outlet."""
 
     temperature: float | None = None
     humidity: float | None = None
@@ -154,7 +154,7 @@ class SubDeviceInfo:
 
 @dataclass
 class DeviceInfo:
-    """Device information for an Intecular outlet."""
+    """Device information for an InvisOutlet outlet."""
 
     serial_number: str
     mac: str
@@ -428,7 +428,7 @@ class AvailableUpdates:
 
 @dataclass
 class FirmwareRelease:
-    """A firmware release from the Intecular update service.
+    """A firmware release from the InvisOutlet update service.
 
     Returned by the OTA-check endpoint for a single module: the latest available
     revision, its download URL and the release notes (``message``).

@@ -1,4 +1,4 @@
-"""Command groups for the Intecular CLI.
+"""Command groups for the InvisOutlet CLI.
 
 Each module exposes a ``register(app)`` function that attaches its commands to
 the shared Typer app — most as noun subgroups (`device`, `nightlight`, …), a few

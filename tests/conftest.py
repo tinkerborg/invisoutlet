@@ -10,7 +10,7 @@ from typing import Any
 import aiohttp
 import pytest
 
-from intecular_client.client import IntecularClient
+from invisoutlet.client import InvisOutletClient
 
 
 class FakeMessage:
@@ -104,9 +104,9 @@ class FakeSession:
 
 
 @pytest.fixture
-async def connected_client() -> AsyncIterator[tuple[IntecularClient, FakeWebSocket]]:
+async def connected_client() -> AsyncIterator[tuple[InvisOutletClient, FakeWebSocket]]:
     """Yield a client wired to a fake WebSocket with its read loop running."""
-    client = IntecularClient("device.local")
+    client = InvisOutletClient("device.local")
     ws = FakeWebSocket()
     client._ws = ws  # type: ignore[assignment]
     client._session = FakeSession()  # type: ignore[assignment]

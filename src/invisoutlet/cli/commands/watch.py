@@ -9,7 +9,7 @@ from rich.console import Group, RenderableType
 from rich.live import Live
 from rich.text import Text
 
-from intecular_client import IntecularClient, SensorData
+from invisoutlet import InvisOutletClient, SensorData
 
 from ..render import console, sensor_table
 from ..state import run_with_client
@@ -38,7 +38,7 @@ def register(app: typer.Typer) -> None:
         run_with_client(ctx.obj, lambda client: _watch(client, us))
 
 
-async def _watch(client: IntecularClient, us: bool) -> None:
+async def _watch(client: InvisOutletClient, us: bool) -> None:
     """Drive a Rich ``Live`` table from the sensor-data callback."""
     info = await client.get_device_info()
 

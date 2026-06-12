@@ -1,12 +1,12 @@
-"""Python client library for Intecular smart outlets."""
+"""Python client library for InvisOutlet smart outlets."""
 
-from .client import IntecularClient, OtaTarget, target_for_device_type
+from .client import InvisOutletClient, OtaTarget, target_for_device_type
 from .discovery import DiscoveredDevice, discover
 from .exceptions import (
-    IntecularCommandError,
-    IntecularConnectionError,
-    IntecularError,
-    IntecularTimeoutError,
+    InvisOutletCommandError,
+    InvisOutletConnectionError,
+    InvisOutletError,
+    InvisOutletTimeoutError,
 )
 from .models import (
     AccessoryName,
@@ -35,11 +35,11 @@ __all__ = [
     "DiscoveredDevice",
     "FirmwareRelease",
     "FirmwareUpdate",
-    "IntecularClient",
-    "IntecularCommandError",
-    "IntecularConnectionError",
-    "IntecularError",
-    "IntecularTimeoutError",
+    "InvisOutletClient",
+    "InvisOutletCommandError",
+    "InvisOutletConnectionError",
+    "InvisOutletError",
+    "InvisOutletTimeoutError",
     "NightlightState",
     "OtaProgress",
     "OtaResult",

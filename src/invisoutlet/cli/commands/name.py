@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from intecular_client import AccessoryName, IntecularClient
+from invisoutlet import AccessoryName, InvisOutletClient
 
 from .. import render
 from ..state import run_with_client
@@ -35,11 +35,11 @@ def set_(
     run_with_client(ctx.obj, lambda c: _set(c, accessory, name))
 
 
-async def _list(client: IntecularClient) -> None:
+async def _list(client: InvisOutletClient) -> None:
     render.render_names(await client.get_accessory_names())
 
 
-async def _set(client: IntecularClient, accessory: int, name: str) -> None:
+async def _set(client: InvisOutletClient, accessory: int, name: str) -> None:
     names = await client.get_accessory_names()
     if not any(entry.accessory == accessory for entry in names):
         names.append(AccessoryName(accessory=accessory, name=name))

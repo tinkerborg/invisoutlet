@@ -1,4 +1,4 @@
-"""Client for communicating with Intecular devices over WebSocket."""
+"""Client for communicating with InvisOutlet devices over WebSocket."""
 
 import asyncio
 import json
@@ -12,10 +12,10 @@ from typing import Any
 import aiohttp
 
 from .exceptions import (
-    IntecularCommandError,
-    IntecularConnectionError,
-    IntecularError,
-    IntecularTimeoutError,
+    InvisOutletCommandError,
+    InvisOutletConnectionError,
+    InvisOutletError,
+    InvisOutletTimeoutError,
 )
 from .models import (
     AccessoryName,
@@ -98,14 +98,14 @@ _OTA_SUBPHASE_DEVICE_TYPE = 3
 _OTA_STALL_TIMEOUT = 60.0
 
 
-# Intecular firmware-update (OTA) check service. Queried per module over HTTP to
+# InvisOutlet firmware-update (OTA) check service. Queried per module over HTTP to
 # learn the latest revision, its download URL and the release notes. The path is
 # ``/<module>/<product>/<hw_rev>/<current_fw>``.
 _OTA_CHECK_BASE = "https://oxv6el7gq2dyr57ljslfu5osrq0nhohh.lambda-url.us-east-1.on.aws"
 _OTA_MODULE = {OtaTarget.INVISOUTLET: "IM", OtaTarget.INVISDECO: "PM"}
 # Device model (or faceplate variant) -> product code in the OTA-check URL. The
 # codes aren't reported by the device, so anything absent here has no known update
-# channel and :meth:`IntecularClient.check_firmware` returns ``None``. Faceplates
+# channel and :meth:`InvisOutletClient.check_firmware` returns ``None``. Faceplates
 # share the model name "InvisDeco", so the colour Aura is keyed by its variant.
 _OTA_PRODUCT_CODES = {"InvisOutlet": "IVO1", "InvisDeco": "PRP1", "Aura": "LIP1"}
 
@@ -147,8 +147,8 @@ def _fire(callbacks: list[Callable[[], None]], name: str) -> None:
             _LOGGER.exception("Error in %s callback", name)
 
 
-class IntecularClient:
-    """Client for Intecular smart outlet devices over WebSocket."""
+class InvisOutletClient:
+    """Client for InvisOutlet smart outlet devices over WebSocket."""
 
     def __init__(self, host: str, port: int = 80) -> None:
         """Initialize the client."""
@@ -182,7 +182,7 @@ class IntecularClient:
         self._closing = False
         try:
             await self._connect_ws()
-        except IntecularError:
+        except InvisOutletError:
             await self._cleanup_session()
             raise
         self._read_task = asyncio.create_task(self._supervise())
@@ -224,11 +224,11 @@ class IntecularClient:
                 timeout=10.0,
             )
         except TimeoutError as err:
-            raise IntecularTimeoutError(
+            raise InvisOutletTimeoutError(
                 f"Timeout connecting to {self.host}:{self.port}"
             ) from err
         except (OSError, aiohttp.ClientError) as err:
-            raise IntecularConnectionError(
+            raise InvisOutletConnectionError(
                 f"Cannot connect to {self.host}:{self.port}: {err}"
             ) from err
         self._notify_connected()
@@ -281,7 +281,7 @@ class IntecularClient:
                     break
                 try:
                     await self._connect_ws()
-                except IntecularError as err:
+                except InvisOutletError as err:
                     _LOGGER.debug("Reconnect to %s failed: %s", self.host, err)
                     delay = min(delay * 2, _RECONNECT_MAX_DELAY)
                     continue
@@ -300,11 +300,11 @@ class IntecularClient:
                 pass
         for future in self._pending_requests.values():
             if not future.done():
-                future.set_exception(IntecularConnectionError("Connection lost"))
+                future.set_exception(InvisOutletConnectionError("Connection lost"))
         self._pending_requests.clear()
         self._notify_disconnected()
 
-    async def __aenter__(self) -> "IntecularClient":
+    async def __aenter__(self) -> "InvisOutletClient":
         """Enter async context manager."""
         await self.connect()
         return self
@@ -571,7 +571,7 @@ class IntecularClient:
     async def get_color(self, light: int, timeout: float = 5.0) -> ColorLightState:
         """Fetch a colour array's state (``light`` selector).
 
-        Raises ``IntecularCommandError`` if the device returns no data for that
+        Raises ``InvisOutletCommandError`` if the device returns no data for that
         selector (e.g. no Aura attached).
         """
         return await self._get_color(light, timeout)
@@ -599,7 +599,7 @@ class IntecularClient:
         response = await self._send_request(CALLBACK_COLOR_LIGHT, [light], timeout)
         args = response.get("payload", {}).get("callbackArgs", [])
         if not isinstance(args, list) or len(args) < 3:
-            raise IntecularCommandError(
+            raise InvisOutletCommandError(
                 f"No color light at index {light}; this device may not have an Aura."
             )
         return ColorLightState.from_raw(args)
@@ -631,7 +631,7 @@ class IntecularClient:
         if product is None:
             return None
         if self._session is None:
-            raise IntecularConnectionError("Not connected")
+            raise InvisOutletConnectionError("Not connected")
         url = (
             f"{_OTA_CHECK_BASE}/{_OTA_MODULE[target]}/{product}"
             f"/{hw_rev}/{current_fw_rev}"
@@ -643,7 +643,7 @@ class IntecularClient:
                 resp.raise_for_status()
                 data = await resp.json(content_type=None)
         except (TimeoutError, aiohttp.ClientError) as err:
-            raise IntecularConnectionError(
+            raise InvisOutletConnectionError(
                 f"Firmware check failed for {model}: {err}"
             ) from err
         return FirmwareRelease.from_raw(data, current_fw_rev)
@@ -828,11 +828,11 @@ class IntecularClient:
     ) -> dict[str, Any]:
         """Send a request and wait for the matching response by packet ID.
 
-        Raises ``IntecularCommandError`` if the device reports failure
-        (``PUBACK == 0``) and ``IntecularTimeoutError`` on timeout.
+        Raises ``InvisOutletCommandError`` if the device reports failure
+        (``PUBACK == 0``) and ``InvisOutletTimeoutError`` on timeout.
         """
         if not self._ws:
-            raise IntecularConnectionError("Not connected")
+            raise InvisOutletConnectionError("Not connected")
 
         packet_id = random.randint(100000, 999999)
         message = self._build_message(packet_id, callback_name, callback_args)
@@ -846,14 +846,14 @@ class IntecularClient:
             await self._ws.send_str(message)
             response = await asyncio.wait_for(future, timeout=timeout)
         except TimeoutError as err:
-            raise IntecularTimeoutError(
+            raise InvisOutletTimeoutError(
                 f"Timeout waiting for response to callbackName={callback_name}"
             ) from err
         finally:
             self._pending_requests.pop(packet_id, None)
 
         if response.get("PUBACK") == 0:
-            raise IntecularCommandError(
+            raise InvisOutletCommandError(
                 f"Device reported failure for callbackName={callback_name}"
             )
         return response
@@ -866,7 +866,7 @@ class IntecularClient:
         Used for callbacks 5/6/7 (restart, network reset, factory reset).
         """
         if not self._ws:
-            raise IntecularConnectionError("Not connected")
+            raise InvisOutletConnectionError("Not connected")
 
         packet_id = random.randint(100000, 999999)
         message = self._build_message(packet_id, callback_name, callback_args)

@@ -1,4 +1,4 @@
-"""mDNS discovery for Intecular devices."""
+"""mDNS discovery for InvisOutlet devices."""
 
 import asyncio
 from dataclasses import dataclass
@@ -15,7 +15,7 @@ SERVICE_TYPE = "_invis._tcp.local."
 
 @dataclass
 class DiscoveredDevice:
-    """An Intecular device found via mDNS."""
+    """An InvisOutlet device found via mDNS."""
 
     name: str
     host: str
@@ -28,7 +28,7 @@ class DiscoveredDevice:
 
 
 async def discover(timeout: float = 5.0) -> list[DiscoveredDevice]:
-    """Scan the network for Intecular devices.
+    """Scan the network for InvisOutlet devices.
 
     Args:
         timeout: How long to scan in seconds.

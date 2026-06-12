@@ -401,7 +401,7 @@ wheels = [
 ]
 
 [[package]]
-name = "intecular-client"
+name = "invisoutlet"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -434,7 +434,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9" },
-    { name = "intecular-client", extras = ["cli"], marker = "extra == 'dev'" },
+    { name = "invisoutlet", extras = ["cli"], marker = "extra == 'dev'" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
     { name = "mkdocs-click", marker = "extra == 'docs'", specifier = ">=0.8" },
     { name = "mkdocs-gen-files", marker = "extra == 'docs'", specifier = ">=0.5" },

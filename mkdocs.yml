@@ -1,5 +1,5 @@
-site_name: intecular-client
-site_description: Async Python client and CLI for Intecular smart outlets
+site_name: invisoutlet
+site_description: Async Python client and CLI for InvisOutlet smart outlets
 
 theme:
   name: material

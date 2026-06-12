@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from intecular_client.cli import config
-from intecular_client.cli.config import (
+from invisoutlet.cli import config
+from invisoutlet.cli.config import (
     DefaultDevice,
     clear_default_device,
     get_default_device,
@@ -19,7 +19,7 @@ from intecular_client.cli.config import (
 def tmp_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Point the config path at a temporary file."""
     path = tmp_path / "cli.json"
-    monkeypatch.setenv("INTECULAR_CLI_CONFIG", str(path))
+    monkeypatch.setenv("INVIS_CLI_CONFIG", str(path))
     return path
 
 

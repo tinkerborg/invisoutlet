@@ -6,7 +6,7 @@ import asyncio
 
 import typer
 
-from intecular_client import IntecularClient, IntecularError
+from invisoutlet import InvisOutletClient, InvisOutletError
 
 from ..config import (
     DefaultDevice,
@@ -80,9 +80,9 @@ async def _probe(host: str) -> DefaultDevice:
     Falls back to just the host if the device cannot be reached.
     """
     try:
-        async with IntecularClient(host) as client:
+        async with InvisOutletClient(host) as client:
             info = await client.get_device_info()
-    except IntecularError:
+    except InvisOutletError:
         return DefaultDevice(host=host)
     return DefaultDevice(
         host=host, name=info.device or None, serial_number=info.serial_number or None

@@ -7,8 +7,8 @@ from enum import Enum
 
 import typer
 
-from intecular_client import IntecularClient, OtaTarget
-from intecular_client.models import OtaResult
+from invisoutlet import InvisOutletClient, OtaTarget
+from invisoutlet.models import OtaResult
 
 from .. import render
 from ..state import run_with_client
@@ -59,11 +59,11 @@ def update(
     )
 
 
-async def _check(client: IntecularClient) -> None:
+async def _check(client: InvisOutletClient) -> None:
     render.render_updates(await client.get_available_updates())
 
 
-async def _update(client: IntecularClient, target: OtaTarget, method: int) -> None:
+async def _update(client: InvisOutletClient, target: OtaTarget, method: int) -> None:
     done = asyncio.Event()
 
     client.on_ota_progress(

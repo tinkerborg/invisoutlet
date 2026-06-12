@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from intecular_client.discovery import _parse_service_info
+from invisoutlet.discovery import _parse_service_info
 
 
 class FakeServiceInfo:
@@ -16,7 +16,7 @@ class FakeServiceInfo:
         addresses: list[str],
         *,
         server: str | None = "device.local.",
-        name: str = "Intecular._invis._tcp.local.",
+        name: str = "InvisOutlet._invis._tcp.local.",
         port: int | None = 3333,
     ) -> None:
         """Initialize the fake info."""

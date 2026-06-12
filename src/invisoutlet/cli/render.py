@@ -12,7 +12,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from intecular_client import (
+from invisoutlet import (
     AccessoryName,
     AvailableUpdates,
     ColorLightState,

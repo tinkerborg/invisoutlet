@@ -1,6 +1,6 @@
 """Interactive device picker backed by mDNS discovery.
 
-Kept free of any dependency on :mod:`intecular_client.cli.state` so that
+Kept free of any dependency on :mod:`invisoutlet.cli.state` so that
 ``state`` can import from here without a cycle.
 """
 
@@ -11,7 +11,7 @@ import sys
 import questionary
 import typer
 
-from intecular_client import DiscoveredDevice, discover
+from invisoutlet import DiscoveredDevice, discover
 
 from .render import console
 
@@ -55,7 +55,7 @@ async def pick_device(timeout: float = 5.0) -> DiscoveredDevice | None:
     if not _is_interactive():
         console.print(
             "[red]No device selected.[/red] Pass [cyan]--host[/cyan], set a default "
-            "with [cyan]intecular device select[/cyan], or run in an interactive "
+            "with [cyan]invis device select[/cyan], or run in an interactive "
             "terminal."
         )
         raise typer.Exit(code=1)
