@@ -83,9 +83,6 @@ class SensorData:
     co2_peak: int | None = None
     co2_accuracy: int | None = None
     voc_accuracy: int | None = None
-    # Development-only raw BME680 readings.
-    bme680_temperature: float | None = None
-    bme680_humidity: float | None = None
     # Validity flags reported alongside the readings.
     temp_valid: bool | None = None
     aqi_valid: bool | None = None
@@ -127,8 +124,6 @@ class SensorData:
             co2_peak=_int_or_none(data.get("co2_peak_lvl")),
             co2_accuracy=_int_or_none(data.get("co2_accuracy")),
             voc_accuracy=_int_or_none(data.get("bvoc_accuracy")),
-            bme680_temperature=_float_or_none(data.get("BME680_temp_celsius")),
-            bme680_humidity=_float_or_none(data.get("BME680_humidity")),
             temp_valid=_bool_or_none(data.get("temp_valid")),
             aqi_valid=_bool_or_none(data.get("aqi_valid")),
             lux_valid=_bool_or_none(data.get("lux_valid")),
@@ -329,9 +324,8 @@ class ColorLightState:
 
         Shape: ``[light, mode, [<led>, ...], <extra>...]``. An LED entry is
         ``[state, brightness, ...]`` whose trailing fields vary by array: an
-        ``[hue, sat]`` pair and/or a kelvin int may appear, in any combination
-        (the nightlight reports both; the indicator reports fewer). Anything
-        after the LED list is kept in ``extra`` for round-tripping.
+        ``[hue, sat]`` pair and/or a kelvin int may appear, in any combination.
+        Anything after the LED list is kept in ``extra`` for round-tripping.
         """
         light, mode, entries = args[0], args[1], args[2]
         leds: list[ColorLedEntry] = []

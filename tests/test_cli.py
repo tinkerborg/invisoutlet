@@ -183,7 +183,7 @@ def test_help_lists_groups() -> None:
     """The top-level help lists the noun groups and flat commands."""
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for group in ("default", "device", "nightlight", "indicator", "outlet", "name"):
+    for group in ("default", "device", "nightlight", "outlet", "name"):
         assert group in result.output
     assert "Stream live sensor data" in result.output
 

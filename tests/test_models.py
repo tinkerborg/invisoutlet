@@ -82,8 +82,6 @@ def test_sensor_data_from_raw() -> None:
             "movement_energy": 0,
             "stationary_energy": 30,
             "gas": 50000,
-            "BME680_temp_celsius": "22.0",
-            "BME680_humidity": "41.0",
             "temp_valid": True,
             "aqi_valid": 1,
             "lux_valid": 0,
@@ -96,7 +94,6 @@ def test_sensor_data_from_raw() -> None:
     assert data.temp_humidity_accuracy == 1
     assert data.co2_peak == 900
     assert data.voc == 0.5
-    assert data.bme680_temperature == 22.0
     assert data.temp_valid is True
     assert data.aqi_valid is True
     assert data.lux_valid is False

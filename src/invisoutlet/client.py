@@ -110,10 +110,13 @@ _OTA_MODULE = {OtaTarget.INVISOUTLET: "IM", OtaTarget.INVISDECO: "PM"}
 _OTA_PRODUCT_CODES = {"InvisOutlet": "IVO1", "InvisDeco": "PRP1", "Aura": "LIP1"}
 
 
-# Light-array selectors (the first ``callbackArgs`` element of callbacks 17/18):
-# the nightlight (9 LEDs) and the indicator (7 LEDs).
-LIGHT_INDICATOR = 7
+# Light-array selector (the first ``callbackArgs`` element of callbacks 17/18):
+# the nightlight (9 LEDs).
 LIGHT_NIGHTLIGHT = 5
+
+# Colour-temperature range the colour arrays accept, in kelvin.
+MIN_KELVIN = 1000
+MAX_KELVIN = 40000
 
 
 class ColorEffect(IntEnum):
@@ -373,9 +376,7 @@ class InvisOutletClient:
         """
         return self._add_listener(callback_name, callback)
 
-    async def set_outlet(
-        self, outlet: int, on: bool, timeout: float = 5.0
-    ) -> dict[str, Any]:
+    async def set_outlet(self, outlet: int, on: bool, timeout: float = 5.0) -> None:
         """Set the state of an outlet.
 
         Args:
@@ -383,7 +384,7 @@ class InvisOutletClient:
             on: True to turn on, False to turn off.
 
         """
-        return await self._send_request(CALLBACK_OUTLET_SET, [outlet, int(on)], timeout)
+        await self._send_request(CALLBACK_OUTLET_SET, [outlet, int(on)], timeout)
 
     async def get_config(self, timeout: float = 5.0) -> DeviceConfig:
         """Request device configuration."""
@@ -433,7 +434,7 @@ class InvisOutletClient:
         mqtt_password: str | None = None,
         mqtt_qos: int | None = None,
         timeout: float = 5.0,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Set device configuration.
 
         Only the fields you pass are sent; everything left as ``None`` is
@@ -467,7 +468,7 @@ class InvisOutletClient:
             mqtt_password=mqtt_password,
             mqtt_qos=mqtt_qos,
         )
-        return await self._send_request(CALLBACK_CONFIG_SET, [config.to_raw()], timeout)
+        await self._send_request(CALLBACK_CONFIG_SET, [config.to_raw()], timeout)
 
     async def get_device_info(self, timeout: float = 5.0) -> DeviceInfo:
         """Request device information."""
@@ -487,9 +488,9 @@ class InvisOutletClient:
 
     async def set_accessory_names(
         self, names: list[AccessoryName], timeout: float = 5.0
-    ) -> dict[str, Any]:
+    ) -> None:
         """Set the user-assigned accessory names."""
-        return await self._send_request(
+        await self._send_request(
             CALLBACK_ACCESSORY_NAMES_SET,
             [name.to_raw() for name in names],
             timeout,
@@ -521,7 +522,7 @@ class InvisOutletClient:
 
     async def set_nightlight(
         self, mode: int, brightness: int, timeout: float = 5.0
-    ) -> dict[str, Any]:
+    ) -> None:
         """Control the nightlight.
 
         Args:
@@ -529,9 +530,7 @@ class InvisOutletClient:
             brightness: Brightness 0-100.
 
         """
-        return await self._send_request(
-            CALLBACK_NIGHTLIGHT_SET, [mode, brightness], timeout
-        )
+        await self._send_request(CALLBACK_NIGHTLIGHT_SET, [mode, brightness], timeout)
 
     async def get_nightlight(self, timeout: float = 5.0) -> NightlightState:
         """Fetch the current nightlight state."""
@@ -548,7 +547,7 @@ class InvisOutletClient:
         on: bool = True,
         count: int = 1,
         timeout: float = 5.0,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Set a colour array (``light`` selector) to an HSV colour.
 
         A single entry broadcasts across the array, but the firmware animates the
@@ -560,7 +559,7 @@ class InvisOutletClient:
             )
             for _ in range(count)
         ]
-        return await self._set_color_hsv(light, leds, timeout=timeout)
+        await self._set_color_hsv(light, leds, timeout=timeout)
 
     async def set_color_temperature(
         self,
@@ -570,7 +569,7 @@ class InvisOutletClient:
         on: bool = True,
         count: int = 1,
         timeout: float = 5.0,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Set a colour array (``light`` selector) to a white temperature.
 
         Unlike the HSV path, the firmware does not broadcast a single temperature
@@ -581,7 +580,7 @@ class InvisOutletClient:
             ColorLedEntry(state=on, brightness=brightness, temperature=kelvin)
             for _ in range(count)
         ]
-        return await self._set_color_temperature(light, leds, timeout)
+        await self._set_color_temperature(light, leds, timeout)
 
     async def set_color_temperatures(
         self,
@@ -590,7 +589,7 @@ class InvisOutletClient:
         brightness: list[int] | None = None,
         states: list[bool] | None = None,
         timeout: float = 5.0,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Set a colour array to a per-LED white temperature.
 
         ``temperatures`` is one kelvin per LED; ``brightness`` (0-100) and
@@ -604,7 +603,7 @@ class InvisOutletClient:
             )
             for index, kelvin in enumerate(temperatures)
         ]
-        return await self._set_color_temperature(light, leds, timeout)
+        await self._set_color_temperature(light, leds, timeout)
 
     async def set_color_effect(
         self,
@@ -644,7 +643,7 @@ class InvisOutletClient:
         brightness: list[int] | None = None,
         mode: int = 1,
         timeout: float = 5.0,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Set per-LED colours (and optionally the mode) by round-tripping the frame.
 
         ``colors`` is a list of ``(hue, saturation)`` applied to LEDs 0..N-1 in
@@ -661,7 +660,7 @@ class InvisOutletClient:
             led.saturation = saturation
             if brightness is not None and index < len(brightness):
                 led.brightness = brightness[index]
-        return await self._send_request(
+        await self._send_request(
             CALLBACK_COLOR_LIGHT_TEMPERATURE, state.to_raw(), timeout
         )
 
@@ -675,7 +674,7 @@ class InvisOutletClient:
         level: int,
         brightness: list[int] | None = None,
         timeout: float = 5.0,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Run an animated effect over a per-LED palette.
 
         Sends ``[light, mode, [[state, brightness, [hue, sat]], ...], speed,
@@ -694,9 +693,7 @@ class InvisOutletClient:
         ]
         state = ColorLightState(light=light, mode=int(effect), leds=leds)
         payload = [*state.to_hsv_raw(), speed, int(randomize), level]
-        return await self._send_request(
-            CALLBACK_COLOR_LIGHT_TEMPERATURE, payload, timeout
-        )
+        await self._send_request(CALLBACK_COLOR_LIGHT_TEMPERATURE, payload, timeout)
 
     async def set_color_led(
         self,
@@ -739,19 +736,19 @@ class InvisOutletClient:
 
     async def _set_color_temperature(
         self, light: int, leds: list[ColorLedEntry], timeout: float = 5.0
-    ) -> dict[str, Any]:
+    ) -> None:
         """Set a color light to static-temperature mode (callback 17, mode 2)."""
         state = ColorLightState(light=light, mode=2, leds=leds)
-        return await self._send_request(
+        await self._send_request(
             CALLBACK_COLOR_LIGHT_TEMPERATURE, state.to_temperature_raw(), timeout
         )
 
     async def _set_color_hsv(
         self, light: int, leds: list[ColorLedEntry], timeout: float = 5.0
-    ) -> dict[str, Any]:
+    ) -> None:
         """Set a color light to static-HSV mode (callback 17, mode 1)."""
         state = ColorLightState(light=light, mode=1, leds=leds)
-        return await self._send_request(
+        await self._send_request(
             CALLBACK_COLOR_LIGHT_TEMPERATURE, state.to_hsv_raw(), timeout
         )
 
@@ -826,19 +823,19 @@ class InvisOutletClient:
         self._ota_seen_progress.discard(target)
         self._arm_ota_stall(target)
 
-    async def restart_invisdeco(self, timeout: float = 5.0) -> dict[str, Any]:
+    async def restart_invisdeco(self, timeout: float = 5.0) -> None:
         """Restart the attached InvisDeco sub-device."""
-        return await self._send_request(CALLBACK_RESTART_INVISDECO, timeout=timeout)
+        await self._send_request(CALLBACK_RESTART_INVISDECO, timeout=timeout)
 
-    async def reset_invisdeco(self, timeout: float = 5.0) -> dict[str, Any]:
+    async def reset_invisdeco(self, timeout: float = 5.0) -> None:
         """Reset the attached InvisDeco sub-device."""
-        return await self._send_request(CALLBACK_RESET_INVISDECO, timeout=timeout)
+        await self._send_request(CALLBACK_RESET_INVISDECO, timeout=timeout)
 
     async def calibrate_occupancy(
         self, duration_seconds: int, timeout: float = 5.0
-    ) -> dict[str, Any]:
+    ) -> None:
         """Run occupancy-sensor calibration for the given duration."""
-        return await self._send_request(
+        await self._send_request(
             CALLBACK_OCCUPANCY_CALIBRATION, [duration_seconds], timeout
         )
 
@@ -847,12 +844,12 @@ class InvisOutletClient:
         temperature_celsius: float,
         humidity_percent: float,
         timeout: float = 5.0,
-    ) -> dict[str, Any]:
+    ) -> None:
         """Calibrate temperature and relative humidity to reference values.
 
         The device expects millidegrees and millipercent; this converts for you.
         """
-        return await self._send_request(
+        await self._send_request(
             CALLBACK_TEMP_HUMIDITY_CALIBRATION,
             [round(temperature_celsius * 1000), round(humidity_percent * 1000)],
             timeout,
@@ -965,12 +962,6 @@ class InvisOutletClient:
             _OTA_STALL_TIMEOUT,
         )
         self._notify_ota_result(OtaResult(device_type=int(target), status=0))
-
-    async def send_command(
-        self, callback_name: int, callback_args: Any = None, timeout: float = 5.0
-    ) -> dict[str, Any]:
-        """Send a command and wait for a response."""
-        return await self._send_request(callback_name, callback_args, timeout)
 
     def _build_message(
         self, packet_id: int, callback_name: int, callback_args: Any

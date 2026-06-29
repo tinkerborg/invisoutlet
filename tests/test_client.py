@@ -519,15 +519,15 @@ async def test_ota_push_dispatch(
     ws.push(
         {
             "packetID": 1,
-            "payload": {"callbackName": CALLBACK_OTA_PROGRESS, "callbackArgs": [0, 1, 55]},
+            "payload": {"callbackName": CALLBACK_OTA_PROGRESS, "callbackArgs": [1, 90]},
         }
     )
     ws.push(
         {
             "packetID": 2,
-            "payload": {"callbackName": CALLBACK_OTA_RESULT, "callbackArgs": [0, 1, 1]},
+            "payload": {"callbackName": CALLBACK_OTA_RESULT, "callbackArgs": [1, 1]},
         }
     )
     await asyncio.sleep(0.01)
-    assert progress[0].progress == 55
+    assert progress[0].progress == 90
     assert results[0].success is True
