@@ -26,6 +26,7 @@ from invisoutlet.client import (
     CALLBACK_RESET_NETWORK,
     CALLBACK_RESTART,
     CALLBACK_SENSOR_DATA,
+    ColorEffect,
     LIGHT_NIGHTLIGHT,
 )
 
@@ -177,6 +178,56 @@ async def test_set_color_hsv(
     payload = _last(ws)
     assert payload["callbackName"] == 17
     assert payload["callbackArgs"] == [5, 1, [[1, 90, [200, 80]]]]
+
+
+async def test_set_color_effect(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """set_color_effect round-trips the full frame: read, switch mode, recolour."""
+    client, ws = connected_client
+    # Device's current full frame (2 LEDs + undocumented trailing fields).
+    ws.responses[18] = [5, 1, [[1, 40, [27, 35], 4000]] * 2, 1, 0, 40]
+    await client.set_color_effect(
+        LIGHT_NIGHTLIGHT, ColorEffect.RAINBOW, hue=200, saturation=80, brightness=90
+    )
+    payload = _last(ws)
+    assert payload["callbackName"] == 17
+    # mode -> 6, LEDs recoloured/dimmed, kelvin + trailing fields preserved.
+    assert payload["callbackArgs"] == [
+        5,
+        6,
+        [[1, 90, [200, 80], 4000], [1, 90, [200, 80], 4000]],
+        1,
+        0,
+        40,
+    ]
+
+
+async def test_set_color_pixels(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """set_color_pixels round-trips: recolour LEDs 0..N in order, keep the rest."""
+    client, ws = connected_client
+    # Current frame: 3 LEDs (all the same) + trailing fields.
+    ws.responses[18] = [5, 1, [[1, 40, [27, 35], 4000]] * 3, 1, 0, 40]
+    # Two colours -> LEDs 0,1 recoloured; LED 2 kept; mode set to Rainbow.
+    await client.set_color_pixels(
+        LIGHT_NIGHTLIGHT, [(10, 100), (120, 50)], mode=ColorEffect.RAINBOW
+    )
+    payload = _last(ws)
+    assert payload["callbackName"] == 17
+    assert payload["callbackArgs"] == [
+        5,
+        6,
+        [
+            [1, 40, [10, 100], 4000],
+            [1, 40, [120, 50], 4000],
+            [1, 40, [27, 35], 4000],
+        ],
+        1,
+        0,
+        40,
+    ]
 
 
 async def test_get_color_missing_raises(

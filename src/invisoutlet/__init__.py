@@ -1,6 +1,11 @@
 """Python client library for InvisOutlet smart outlets."""
 
-from .client import InvisOutletClient, OtaTarget, target_for_device_type
+from .client import (
+    ColorEffect,
+    InvisOutletClient,
+    OtaTarget,
+    target_for_device_type,
+)
 from .discovery import DiscoveredDevice, discover
 from .exceptions import (
     InvisOutletCommandError,
@@ -28,6 +33,7 @@ from .models import (
 __all__ = [
     "AccessoryName",
     "AvailableUpdates",
+    "ColorEffect",
     "ColorLedEntry",
     "ColorLightState",
     "DeviceConfig",

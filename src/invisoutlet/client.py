@@ -1,12 +1,12 @@
 """Client for communicating with InvisOutlet devices over WebSocket."""
 
 import asyncio
-import json
-import logging
-import random
 from collections.abc import Callable
 from enum import IntEnum
 from functools import partial
+import json
+import logging
+import random
 from typing import Any
 
 import aiohttp
@@ -115,6 +115,21 @@ _OTA_PRODUCT_CODES = {"InvisOutlet": "IVO1", "InvisDeco": "PRP1", "Aura": "LIP1"
 LIGHT_INDICATOR = 7
 LIGHT_NIGHTLIGHT = 5
 
+
+class ColorEffect(IntEnum):
+    """Animated effect modes for a colour array (callback 17, arg 2).
+
+    Modes 1 (static HSV) and 2 (static temperature) are set via the
+    ``set_color_*`` helpers; these are the self-animating modes.
+    """
+
+    BREATHING = 3
+    STROBING = 4
+    COLOR_CYCLE = 5
+    RAINBOW = 6
+    STARRY_NIGHT = 7
+
+
 # Auto-reconnect backoff bounds (seconds).
 _RECONNECT_INITIAL_DELAY = 1.0
 _RECONNECT_MAX_DELAY = 60.0
@@ -143,7 +158,7 @@ def _fire(callbacks: list[Callable[[], None]], name: str) -> None:
     for callback in list(callbacks):
         try:
             callback()
-        except Exception:  # noqa: BLE001 - a callback must not break the client
+        except Exception:
             _LOGGER.exception("Error in %s callback", name)
 
 
@@ -304,7 +319,7 @@ class InvisOutletClient:
         self._pending_requests.clear()
         self._notify_disconnected()
 
-    async def __aenter__(self) -> "InvisOutletClient":
+    async def __aenter__(self) -> InvisOutletClient:
         """Enter async context manager."""
         await self.connect()
         return self
@@ -545,7 +560,7 @@ class InvisOutletClient:
             )
             for _ in range(count)
         ]
-        return await self._set_color_hsv(light, leds, timeout)
+        return await self._set_color_hsv(light, leds, timeout=timeout)
 
     async def set_color_temperature(
         self,
@@ -567,6 +582,152 @@ class InvisOutletClient:
             for _ in range(count)
         ]
         return await self._set_color_temperature(light, leds, timeout)
+
+    async def set_color_temperatures(
+        self,
+        light: int,
+        temperatures: list[int],
+        brightness: list[int] | None = None,
+        states: list[bool] | None = None,
+        timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        """Set a colour array to a per-LED white temperature.
+
+        ``temperatures`` is one kelvin per LED; ``brightness`` (0-100) and
+        ``states`` are optional matching lists (default full + on).
+        """
+        leds = [
+            ColorLedEntry(
+                state=states[index] if states is not None else True,
+                brightness=brightness[index] if brightness is not None else 100,
+                temperature=kelvin,
+            )
+            for index, kelvin in enumerate(temperatures)
+        ]
+        return await self._set_color_temperature(light, leds, timeout)
+
+    async def set_color_effect(
+        self,
+        light: int,
+        effect: ColorEffect | int,
+        hue: int | None = None,
+        saturation: int | None = None,
+        brightness: int | None = None,
+        timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        """Run an animated effect on a colour array (``light`` selector).
+
+        Effects need the device's full frame (including undocumented trailing
+        fields), so this reads the current state, switches to the effect mode,
+        optionally re-colours/dims the array, and writes the frame back verbatim.
+        The HSV values seed effects that use a base colour (e.g. breathing);
+        self-colouring effects (rainbow, cycle) ignore them.
+        """
+        state = await self._get_color(light, timeout)
+        state.mode = int(effect)
+        for led in state.leds:
+            led.state = True
+            if hue is not None:
+                led.hue = hue
+            if saturation is not None:
+                led.saturation = saturation
+            if brightness is not None:
+                led.brightness = brightness
+        return await self._send_request(
+            CALLBACK_COLOR_LIGHT_TEMPERATURE, state.to_raw(), timeout
+        )
+
+    async def set_color_pixels(
+        self,
+        light: int,
+        colors: list[tuple[int, int]],
+        brightness: list[int] | None = None,
+        mode: int = 1,
+        timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        """Set per-LED colours (and optionally the mode) by round-tripping the frame.
+
+        ``colors`` is a list of ``(hue, saturation)`` applied to LEDs 0..N-1 in
+        order; LEDs beyond the list — and the device's undocumented trailing
+        fields — are left untouched. ``brightness``, if given, is a matching list
+        of 0-100 levels applied to the same LEDs. ``mode`` selects static colour
+        (1) or an effect (:class:`ColorEffect`) that animates the palette.
+        """
+        state = await self._get_color(light, timeout)
+        state.mode = int(mode)
+        for index, (led, (hue, saturation)) in enumerate(zip(state.leds, colors)):
+            led.state = True
+            led.hue = hue
+            led.saturation = saturation
+            if brightness is not None and index < len(brightness):
+                led.brightness = brightness[index]
+        return await self._send_request(
+            CALLBACK_COLOR_LIGHT_TEMPERATURE, state.to_raw(), timeout
+        )
+
+    async def set_color_effect_pixels(
+        self,
+        light: int,
+        colors: list[tuple[int, int]],
+        effect: ColorEffect | int,
+        speed: int,
+        randomize: bool,
+        level: int,
+        brightness: list[int] | None = None,
+        timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        """Run an animated effect over a per-LED palette.
+
+        Sends ``[light, mode, [[state, brightness, [hue, sat]], ...], speed,
+        randomize, level]`` — the per-LED colour array followed by speed, the
+        randomize flag, and a brightness level (used by the device only when
+        randomizing).
+        """
+        leds = [
+            ColorLedEntry(
+                state=True,
+                brightness=brightness[index] if brightness is not None else 100,
+                hue=hue,
+                saturation=saturation,
+            )
+            for index, (hue, saturation) in enumerate(colors)
+        ]
+        state = ColorLightState(light=light, mode=int(effect), leds=leds)
+        payload = [*state.to_hsv_raw(), speed, int(randomize), level]
+        return await self._send_request(
+            CALLBACK_COLOR_LIGHT_TEMPERATURE, payload, timeout
+        )
+
+    async def set_color_led(
+        self,
+        light: int,
+        index: int,
+        *,
+        hue: int | None = None,
+        saturation: int | None = None,
+        brightness: int | None = None,
+        on: bool | None = None,
+        timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        """Set one LED's fields, leaving the others and the array's mode intact.
+
+        Round-trips the current frame so per-LED colour holds under an effect.
+        Only the provided fields are changed.
+        """
+        state = await self._get_color(light, timeout)
+        if 0 <= index < len(state.leds):
+            led = state.leds[index]
+            if on is not None:
+                led.state = on
+            if hue is not None:
+                led.hue = hue
+            if saturation is not None:
+                led.saturation = saturation
+            if brightness is not None:
+                led.brightness = brightness
+        return await self._send_request(
+            CALLBACK_COLOR_LIGHT_TEMPERATURE, state.to_raw(), timeout
+        )
 
     async def get_color(self, light: int, timeout: float = 5.0) -> ColorLightState:
         """Fetch a colour array's state (``light`` selector).
@@ -738,7 +899,7 @@ class InvisOutletClient:
         for callback in list(self._ota_result_callbacks):
             try:
                 callback(result)
-            except Exception:  # noqa: BLE001 - a callback must not break dispatch
+            except Exception:
                 _LOGGER.exception("Error in on_ota_result callback")
 
     def _on_raw_ota_progress(self, msg: dict[str, Any]) -> None:

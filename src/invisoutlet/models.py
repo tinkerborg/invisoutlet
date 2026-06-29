@@ -318,15 +318,20 @@ class ColorLightState:
     light: int
     mode: int
     leds: list[ColorLedEntry]
+    # Trailing per-array fields the device reports after the LED list (e.g.
+    # ``[1, 0, 40]``). Their meaning is undocumented, so they're preserved
+    # verbatim and replayed on a full-frame write rather than interpreted.
+    extra: list[Any] = field(default_factory=list)
 
     @classmethod
     def from_raw(cls, args: list[Any]) -> ColorLightState:
         """Parse a callback 18 response.
 
-        Shape: ``[light, mode, [<led>, ...]]``. An LED entry is
+        Shape: ``[light, mode, [<led>, ...], <extra>...]``. An LED entry is
         ``[state, brightness, ...]`` whose trailing fields vary by array: an
         ``[hue, sat]`` pair and/or a kelvin int may appear, in any combination
-        (the nightlight reports both; the indicator reports fewer).
+        (the nightlight reports both; the indicator reports fewer). Anything
+        after the LED list is kept in ``extra`` for round-tripping.
         """
         light, mode, entries = args[0], args[1], args[2]
         leds: list[ColorLedEntry] = []
@@ -347,7 +352,27 @@ class ColorLightState:
                     temperature=temperature,
                 )
             )
-        return cls(light=int(light), mode=int(mode), leds=leds)
+        return cls(
+            light=int(light), mode=int(mode), leds=leds, extra=list(args[3:])
+        )
+
+    def to_raw(self) -> list[Any]:
+        """Serialize the full frame the device uses (callback 17).
+
+        Reproduces ``[light, mode, [[state, brightness, [hue, sat], kelvin], ...],
+        <extra>...]`` — the complete shape effects require, with the undocumented
+        trailing fields replayed as-read.
+        """
+        entries = [
+            [
+                int(led.state),
+                led.brightness,
+                [led.hue, led.saturation],
+                led.temperature,
+            ]
+            for led in self.leds
+        ]
+        return [self.light, self.mode, entries, *self.extra]
 
     def to_temperature_raw(self) -> list[Any]:
         """Serialize for callback 17 (static temperature).
