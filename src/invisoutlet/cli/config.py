@@ -15,7 +15,7 @@ _DEFAULT_DEVICE_KEY = "default_device"
 
 
 def config_path() -> Path:
-    """Return the config file path, honouring ``INVIS_CLI_CONFIG``.
+    """Return the config file path, honoring ``INVIS_CLI_CONFIG``.
 
     Resolved on each call so tests can point it at a temporary file.
     """

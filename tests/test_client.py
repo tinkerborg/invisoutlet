@@ -191,11 +191,11 @@ async def test_set_color_hsv(
 async def test_set_color_pixels(
     connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
-    """set_color_pixels round-trips: recolour LEDs 0..N in order, keep the rest."""
+    """set_color_pixels round-trips: recolor LEDs 0..N in order, keep the rest."""
     client, ws = connected_client
     # Current frame: 3 LEDs (all the same) + trailing fields.
     ws.responses[18] = [5, 1, [[1, 40, [27, 35], 4000]] * 3, 1, 0, 40]
-    # Two colours -> LEDs 0,1 recoloured; LED 2 kept; mode set to Rainbow.
+    # Two colors -> LEDs 0,1 recolored; LED 2 kept; mode set to Rainbow.
     await client.set_color_pixels(
         LIGHT_NIGHTLIGHT, [(10, 100), (120, 50)], mode=ColorEffect.RAINBOW
     )
@@ -770,7 +770,7 @@ async def test_get_sensor_data(
     assert empty.temperature is None
 
 
-# --- colour helpers -------------------------------------------------------
+# --- color helpers -------------------------------------------------------
 
 
 async def test_set_color_temperatures_per_led(

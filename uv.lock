@@ -402,7 +402,7 @@ wheels = [
 
 [[package]]
 name = "invisoutlet"
-version = "0.1.0"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -429,12 +429,16 @@ docs = [
     { name = "mkdocs-gen-files" },
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extra = ["python"] },
+    { name = "questionary" },
+    { name = "rich" },
+    { name = "typer" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9" },
     { name = "invisoutlet", extras = ["cli"], marker = "extra == 'dev'" },
+    { name = "invisoutlet", extras = ["cli"], marker = "extra == 'docs'" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
     { name = "mkdocs-click", marker = "extra == 'docs'", specifier = ">=0.8" },
     { name = "mkdocs-gen-files", marker = "extra == 'docs'", specifier = ">=0.5" },

@@ -1,9 +1,32 @@
 # invisoutlet
 
+[![ci](https://github.com/tinkerborg/invisoutlet/actions/workflows/ci.yml/badge.svg)](https://github.com/tinkerborg/invisoutlet/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/tinkerborg/invisoutlet/graph/badge.svg)](https://codecov.io/gh/tinkerborg/invisoutlet)
+[![docs](https://github.com/tinkerborg/invisoutlet/actions/workflows/docs.yml/badge.svg)](https://tinkerborg.github.io/invisoutlet/)
+[![PyPI](https://img.shields.io/pypi/v/invisoutlet)](https://pypi.org/project/invisoutlet/)
+[![Python](https://img.shields.io/pypi/pyversions/invisoutlet)](https://pypi.org/project/invisoutlet/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/tinkerborg/invisoutlet/blob/HEAD/LICENSE)
+
 A Python client library and command-line tool for InvisOutlet smart outlets. It
 talks to the device directly over its local network API, so there's no cloud in
 the loop. This is an independent project, and it isn't affiliated with or
 endorsed by InvisOutlet.
+
+## Features
+
+- **Local-only** — speaks the device's on-device WebSocket API directly; no
+  cloud account, no internet dependency.
+- **Push-driven** — subscribe to live sensor, outlet, and OTA updates as the
+  device emits them; auto-reconnects with backoff.
+- **Full device surface** — outlets, nightlight and Aura color arrays (static
+  color/temperature, per-LED palettes, animated effects), sensor readings,
+  configuration, accessory names, calibration, and OTA firmware updates.
+- **Typed, async API** — `asyncio` throughout, parsed dataclass models, and
+  exceptions on failure (no error codes to check).
+- **`invis` CLI** — discover devices on the network and drive every command
+  from the terminal.
+- **Lightweight core** — the library depends only on `aiohttp` and `zeroconf`;
+  CLI deps are an optional extra.
 
 ## Install
 
@@ -57,4 +80,4 @@ uv run pytest -q
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/tinkerborg/invisoutlet/blob/HEAD/LICENSE)

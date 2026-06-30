@@ -1,5 +1,7 @@
 """Client for communicating with InvisOutlet devices over WebSocket."""
 
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Callable
 from enum import IntEnum
@@ -106,7 +108,7 @@ _OTA_MODULE = {OtaTarget.INVISOUTLET: "IM", OtaTarget.INVISDECO: "PM"}
 # Device model (or faceplate variant) -> product code in the OTA-check URL. The
 # codes aren't reported by the device, so anything absent here has no known update
 # channel and :meth:`InvisOutletClient.check_firmware` returns ``None``. Faceplates
-# share the model name "InvisDeco", so the colour Aura is keyed by its variant.
+# share the model name "InvisDeco", so the color Aura is keyed by its variant.
 _OTA_PRODUCT_CODES = {"InvisOutlet": "IVO1", "InvisDeco": "PRP1", "Aura": "LIP1"}
 
 
@@ -114,13 +116,13 @@ _OTA_PRODUCT_CODES = {"InvisOutlet": "IVO1", "InvisDeco": "PRP1", "Aura": "LIP1"
 # the nightlight (9 LEDs).
 LIGHT_NIGHTLIGHT = 5
 
-# Colour-temperature range the colour arrays accept, in kelvin.
+# Color-temperature range the color arrays accept, in kelvin.
 MIN_KELVIN = 1000
 MAX_KELVIN = 40000
 
 
 class ColorEffect(IntEnum):
-    """Animated effect modes for a colour array (callback 17, arg 2).
+    """Animated effect modes for a color array (callback 17, arg 2).
 
     Modes 1 (static HSV) and 2 (static temperature) are set via the
     ``set_color_*`` helpers; these are the self-animating modes.
@@ -549,7 +551,7 @@ class InvisOutletClient:
         count: int = 1,
         timeout: float = 5.0,
     ) -> None:
-        """Set a colour array (``light`` selector) to an HSV colour.
+        """Set a color array (``light`` selector) to an HSV color.
 
         A single entry broadcasts across the array, but the firmware animates the
         fill; pass ``count`` = the number of LEDs to set them all at once instead.
@@ -571,7 +573,7 @@ class InvisOutletClient:
         count: int = 1,
         timeout: float = 5.0,
     ) -> None:
-        """Set a colour array (``light`` selector) to a white temperature.
+        """Set a color array (``light`` selector) to a white temperature.
 
         Unlike the HSV path, the firmware does not broadcast a single temperature
         entry across the array, so pass ``count`` = the number of LEDs to light
@@ -591,7 +593,7 @@ class InvisOutletClient:
         states: list[bool] | None = None,
         timeout: float = 5.0,
     ) -> None:
-        """Set a colour array to a per-LED white temperature.
+        """Set a color array to a per-LED white temperature.
 
         ``temperatures`` is one kelvin per LED; ``brightness`` (0-100) and
         ``states`` are optional matching lists (default full + on).
@@ -614,12 +616,12 @@ class InvisOutletClient:
         mode: int = 1,
         timeout: float = 5.0,
     ) -> None:
-        """Set per-LED colours (and optionally the mode) by round-tripping the frame.
+        """Set per-LED colors (and optionally the mode) by round-tripping the frame.
 
         ``colors`` is a list of ``(hue, saturation)`` applied to LEDs 0..N-1 in
         order; LEDs beyond the list — and the device's undocumented trailing
         fields — are left untouched. ``brightness``, if given, is a matching list
-        of 0-100 levels applied to the same LEDs. ``mode`` selects static colour
+        of 0-100 levels applied to the same LEDs. ``mode`` selects static color
         (1) or an effect (:class:`ColorEffect`) that animates the palette.
         """
         state = await self._get_color(light, timeout)
@@ -648,7 +650,7 @@ class InvisOutletClient:
         """Run an animated effect over a per-LED palette.
 
         Sends ``[light, mode, [[state, brightness, [hue, sat]], ...], speed,
-        randomize, level]`` — the per-LED colour array followed by speed, the
+        randomize, level]`` — the per-LED color array followed by speed, the
         randomize flag, and a brightness level (used by the device only when
         randomizing).
         """
@@ -666,7 +668,7 @@ class InvisOutletClient:
         await self._send_request(CALLBACK_COLOR_LIGHT_TEMPERATURE, payload, timeout)
 
     async def get_color(self, light: int, timeout: float = 5.0) -> ColorLightState:
-        """Fetch a colour array's state (``light`` selector).
+        """Fetch a color array's state (``light`` selector).
 
         Raises ``InvisOutletCommandError`` if the device returns no data for that
         selector (e.g. no Aura attached).

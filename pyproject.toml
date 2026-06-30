@@ -4,14 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "invisoutlet"
-version = "0.1.0"
-description = "Python client library for InvisOutlet smart outlets"
+version = "1.0.0"
+description = "Python client library and CLI for InvisOutlet smart outlets"
+readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"
+authors = [{ name = "tinkerborg" }]
+keywords = ["invisoutlet", "smart outlet", "home automation", "iot", "websocket"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Home Automation",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
+]
 dependencies = [
     "aiohttp>=3.9",
     "zeroconf>=0.131",
 ]
+
+[project.urls]
+Homepage = "https://github.com/tinkerborg/invisoutlet"
+Repository = "https://github.com/tinkerborg/invisoutlet"
+Documentation = "https://tinkerborg.github.io/invisoutlet/"
+Issues = "https://github.com/tinkerborg/invisoutlet/issues"
 
 [project.scripts]
 invis = "invisoutlet.cli.app:app"
@@ -32,6 +51,9 @@ dev = [
     "pytest-cov>=5.0",
 ]
 docs = [
+    # mkdocs-click imports the CLI module to render its reference, which pulls
+    # in typer/rich/questionary.
+    "invisoutlet[cli]",
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.26",
