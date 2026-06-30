@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
+import aiohttp
 import pytest
 
 from invisoutlet import (
@@ -28,14 +30,20 @@ from invisoutlet.client import (
     CALLBACK_SENSOR_DATA,
     ColorEffect,
     LIGHT_NIGHTLIGHT,
+    target_for_device_type,
 )
 
-from .conftest import FakeSession, FakeWebSocket
+from .conftest import FakeMessage, FakeSession, FakeWebSocket
 
 
 def _last(ws: FakeWebSocket) -> dict:
     """Return the payload of the most recent request."""
     return ws.sent[-1]["payload"]
+
+
+def _raise(*_args: object) -> None:
+    """A callback that always raises, to test error isolation."""
+    raise ValueError("boom")
 
 
 async def test_set_outlet_framing(
@@ -531,3 +539,478 @@ async def test_ota_push_dispatch(
     await asyncio.sleep(0.01)
     assert progress[0].progress == 90
     assert results[0].success is True
+
+
+# --- connection lifecycle -------------------------------------------------
+
+
+def test_target_for_device_type_unknown() -> None:
+    """An unrecognized OTA device_type maps to no target."""
+    assert target_for_device_type(99) is None
+    assert target_for_device_type(1) is OtaTarget.INVISOUTLET
+    assert target_for_device_type(3) is OtaTarget.INVISOUTLET
+    assert target_for_device_type(2) is OtaTarget.INVISDECO
+
+
+async def test_connect_initial_failure_cleans_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed initial connect raises and leaves no dangling session."""
+    # No queued socket → FakeSession.ws_connect raises like a refused connection.
+    monkeypatch.setattr("invisoutlet.client.aiohttp.ClientSession", FakeSession)
+    client = InvisOutletClient("device.local")
+    with pytest.raises(InvisOutletConnectionError):
+        await client.connect()
+    assert client._session is None
+    assert client._read_task is None
+
+
+async def test_connect_timeout_wraps_error() -> None:
+    """A timed-out handshake surfaces as InvisOutletTimeoutError."""
+
+    class TimeoutSession(FakeSession):
+        async def ws_connect(self, url: str, **kwargs: object) -> FakeWebSocket:
+            raise TimeoutError
+
+    client = InvisOutletClient("device.local")
+    client._session = TimeoutSession()  # type: ignore[assignment]
+    with pytest.raises(InvisOutletTimeoutError):
+        await client.connect()
+
+
+async def test_async_context_manager() -> None:
+    """`async with` connects on enter and closes on exit."""
+    client = InvisOutletClient("device.local")
+    session = FakeSession()
+    ws = FakeWebSocket()
+    session.queue_ws(ws)
+    client._session = session  # type: ignore[assignment]
+
+    async with client as entered:
+        assert entered is client
+        assert client._ws is ws
+
+    assert client._ws is None
+    assert client._closing is True
+
+
+async def test_close_cancels_pending_requests(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """Outstanding request futures are cancelled and cleared on close."""
+    client, _ws = connected_client
+    future: asyncio.Future[dict[str, Any]] = asyncio.get_event_loop().create_future()
+    client._pending_requests[123] = future
+    await client.close()
+    assert future.cancelled()
+    assert client._pending_requests == {}
+
+
+async def test_handle_disconnect_fails_pending_and_tolerates_close_error(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """A disconnect fails in-flight requests even if the socket close errors."""
+    client, _ws = connected_client
+
+    class BadWs:
+        async def close(self) -> None:
+            raise RuntimeError("teardown boom")
+
+    client._ws = BadWs()  # type: ignore[assignment]
+    disconnects: list[int] = []
+    client.on_disconnect(lambda: disconnects.append(1))
+    future: asyncio.Future[dict[str, Any]] = asyncio.get_event_loop().create_future()
+    client._pending_requests[1] = future
+
+    await client._handle_disconnect()
+
+    assert future.done()
+    with pytest.raises(InvisOutletConnectionError):
+        future.result()
+    assert disconnects == [1]
+
+
+async def test_reconnect_retries_after_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the first reconnect attempt fails, it backs off and retries."""
+    monkeypatch.setattr("invisoutlet.client._RECONNECT_INITIAL_DELAY", 0.01)
+    session = FakeSession()
+    ws1, ws2 = FakeWebSocket(), FakeWebSocket()
+    session.queue_ws(ws1)
+
+    client = InvisOutletClient("device.local")
+    client._session = session  # type: ignore[assignment]
+    await client.connect()
+    assert client._ws is ws1
+
+    # Drop with nothing queued: reconnect attempts fail and back off.
+    await ws1.close()
+    await asyncio.sleep(0.05)
+    assert client._ws is None
+
+    # Provide a socket; the next attempt should succeed.
+    session.queue_ws(ws2)
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if client._ws is ws2:
+            break
+    assert client._ws is ws2
+
+    await client.close()
+
+
+async def test_callback_unsubscribe_and_error_isolation(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """A raising connect callback is isolated; unsubscribe is idempotent."""
+    client, _ws = connected_client
+    calls: list[int] = []
+    unsub_boom = client.on_connect(_raise)
+    client.on_connect(lambda: calls.append(1))
+
+    client._notify_connected()  # both fire; the raise is logged and swallowed
+    assert calls == [1]
+
+    unsub_boom()
+    unsub_boom()  # second removal is a harmless no-op
+
+
+async def test_send_command_noreply_not_connected() -> None:
+    """A fire-and-forget command without a socket raises."""
+    client = InvisOutletClient("device.local")
+    with pytest.raises(InvisOutletConnectionError):
+        await client.restart()
+
+
+# --- read loop / dispatch -------------------------------------------------
+
+
+async def test_read_loop_skips_invalid_json(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """Invalid JSON is logged and skipped; the loop keeps reading."""
+    client, ws = connected_client
+    received: list[SensorData] = []
+    client.on_sensor_data(received.append)
+
+    ws._queue.put_nowait(FakeMessage(aiohttp.WSMsgType.TEXT, "{not json"))
+    ws.push(
+        {
+            "payload": {
+                "callbackName": CALLBACK_SENSOR_DATA,
+                "callbackArgs": [0, {"temp_celsius": 1.0}],
+            }
+        }
+    )
+    await asyncio.sleep(0.02)
+    assert received and received[0].temperature == 1.0
+
+
+@pytest.mark.parametrize(
+    "msg_type",
+    [aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED],
+)
+async def test_read_loop_breaks_on_control_frames(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    msg_type: aiohttp.WSMsgType,
+) -> None:
+    """An error/close frame ends the read loop cleanly."""
+    client, ws = connected_client
+    ws._queue.put_nowait(FakeMessage(msg_type, ""))
+    await asyncio.sleep(0.02)
+    assert client._read_task is not None
+    assert client._read_task.done()
+
+
+async def test_read_loop_swallows_unexpected_error(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """An unexpected error inside the loop is caught rather than propagated."""
+    client, ws = connected_client
+    ws._queue.put_nowait(object())  # accessing .type raises AttributeError
+    await asyncio.sleep(0.02)
+    assert client._read_task is not None
+    assert client._read_task.done()
+    assert not client._read_task.cancelled()  # ended via the except, not cancel
+
+
+async def test_dispatch_isolates_listener_errors(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """One listener raising does not stop the others from running."""
+    client, ws = connected_client
+    good: list[dict[str, Any]] = []
+    client.on_message(CALLBACK_SENSOR_DATA, _raise)
+    client.on_message(CALLBACK_SENSOR_DATA, good.append)
+
+    ws.push(
+        {"payload": {"callbackName": CALLBACK_SENSOR_DATA, "callbackArgs": [0, {}]}}
+    )
+    await asyncio.sleep(0.01)
+    assert len(good) == 1
+
+
+async def test_on_message_generic_listener(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """on_message delivers the raw envelope for the given callback id."""
+    client, ws = connected_client
+    msgs: list[dict[str, Any]] = []
+    unsub = client.on_message(CALLBACK_SENSOR_DATA, msgs.append)
+
+    ws.push(
+        {"payload": {"callbackName": CALLBACK_SENSOR_DATA, "callbackArgs": [0, {}]}}
+    )
+    await asyncio.sleep(0.01)
+    assert len(msgs) == 1
+    unsub()
+
+
+async def test_on_outlet_status_ignores_empty_args(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """A push with no status list is ignored rather than mis-parsed."""
+    client, ws = connected_client
+    received: list[OutletStatus] = []
+    client.on_outlet_status(received.append)
+
+    ws.push({"payload": {"callbackName": CALLBACK_OUTLET_STATUS, "callbackArgs": []}})
+    await asyncio.sleep(0.01)
+    assert received == []
+
+
+# --- on-demand sensor read ------------------------------------------------
+
+
+async def test_get_sensor_data(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """get_sensor_data parses the wrapped reading, else returns an empty model."""
+    client, ws = connected_client
+    ws.responses[CALLBACK_SENSOR_DATA] = [0, {"temp_celsius": 22.0}]
+    data = await client.get_sensor_data()
+    assert data.temperature == 22.0
+
+    ws.responses[CALLBACK_SENSOR_DATA] = []  # malformed / empty
+    empty = await client.get_sensor_data()
+    assert empty.temperature is None
+
+
+# --- colour helpers -------------------------------------------------------
+
+
+async def test_set_color_temperatures_per_led(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """Per-LED temperatures honour the optional states/brightness lists."""
+    client, ws = connected_client
+    await client.set_color_temperatures(
+        LIGHT_NIGHTLIGHT, [3000, 4000], brightness=[50, 60], states=[True, False]
+    )
+    payload = _last(ws)
+    assert payload["callbackName"] == 17
+    assert payload["callbackArgs"] == [5, 2, [[1, 50, 3000], [0, 60, 4000]]]
+
+
+async def test_set_color_pixels_with_brightness(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """set_color_pixels applies a per-LED brightness when given."""
+    client, ws = connected_client
+    ws.responses[18] = [5, 1, [[1, 40, [27, 35], 4000]]]
+    await client.set_color_pixels(LIGHT_NIGHTLIGHT, [(10, 100)], brightness=[77])
+    payload = _last(ws)
+    assert payload["callbackArgs"] == [5, 1, [[1, 77, [10, 100], 4000]]]
+
+
+async def test_set_color_effect_pixels(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """set_color_effect_pixels frames the palette plus speed/randomize/level."""
+    client, ws = connected_client
+    await client.set_color_effect_pixels(
+        LIGHT_NIGHTLIGHT,
+        [(10, 100), (20, 50)],
+        ColorEffect.RAINBOW,
+        speed=5,
+        randomize=True,
+        level=3,
+        brightness=[80, 90],
+    )
+    payload = _last(ws)
+    assert payload["callbackName"] == 17
+    assert payload["callbackArgs"] == [
+        5,
+        6,
+        [[1, 80, [10, 100]], [1, 90, [20, 50]]],
+        5,
+        1,
+        3,
+    ]
+
+
+async def test_set_color_led_updates_one_led(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """set_color_led changes only the targeted LED and keeps the frame's mode."""
+    client, ws = connected_client
+    ws.responses[18] = [5, 1, [[1, 40, [27, 35], 4000], [1, 40, [27, 35], 4000]]]
+    await client.set_color_led(
+        LIGHT_NIGHTLIGHT, 1, hue=200, saturation=70, brightness=90, on=False
+    )
+    payload = _last(ws)
+    assert payload["callbackName"] == 17
+    assert payload["callbackArgs"] == [
+        5,
+        1,
+        [[1, 40, [27, 35], 4000], [0, 90, [200, 70], 4000]],
+    ]
+
+
+async def test_set_color_led_out_of_range_is_noop(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """An out-of-range index leaves every LED untouched."""
+    client, ws = connected_client
+    ws.responses[18] = [5, 1, [[1, 40, [27, 35], 4000]]]
+    await client.set_color_led(LIGHT_NIGHTLIGHT, 9, hue=200)
+    payload = _last(ws)
+    assert payload["callbackArgs"] == [5, 1, [[1, 40, [27, 35], 4000]]]
+
+
+# --- sub-device commands --------------------------------------------------
+
+
+async def test_invisdeco_subdevice_commands(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """restart/reset_invisdeco use callbacks 24 and 25."""
+    client, ws = connected_client
+    await client.restart_invisdeco()
+    assert _last(ws)["callbackName"] == 24
+    await client.reset_invisdeco()
+    assert _last(ws)["callbackName"] == 25
+
+
+# --- OTA gating internals -------------------------------------------------
+
+
+async def test_ota_result_unsubscribe_and_error_isolation(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """A raising result callback is isolated; unsubscribe is idempotent."""
+    client, ws = connected_client
+    results: list[OtaResult] = []
+    unsub = client.on_ota_result(_raise)
+    client.on_ota_result(results.append)
+
+    _push_ota(ws, CALLBACK_OTA_RESULT, [1, 1])
+    await asyncio.sleep(0.01)
+    assert len(results) == 1  # second callback fired despite the first raising
+
+    unsub()
+    unsub()  # no-op
+
+
+async def test_raw_ota_pushes_ignore_malformed_and_unknown(
+    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+) -> None:
+    """Short payloads and unknown device types don't arm the stall machinery."""
+    client, ws = connected_client
+    _push_ota(ws, CALLBACK_OTA_PROGRESS, [1])  # too short
+    _push_ota(ws, CALLBACK_OTA_PROGRESS, [99, 50])  # unknown device_type
+    _push_ota(ws, CALLBACK_OTA_RESULT, [1])  # too short
+    await asyncio.sleep(0.01)
+    assert client._ota_seen_progress == set()
+    assert client._ota_stall == {}
+
+
+# --- firmware check (HTTP) ------------------------------------------------
+
+
+class _FakeResponse:
+    """Async-context-manager stand-in for an aiohttp response."""
+
+    def __init__(self, data: dict[str, Any] | None, error: Exception | None = None) -> None:
+        self._data = data
+        self._error = error
+
+    async def __aenter__(self) -> "_FakeResponse":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    def raise_for_status(self) -> None:
+        if self._error is not None:
+            raise self._error
+
+    async def json(self, content_type: object = None) -> dict[str, Any] | None:
+        return self._data
+
+
+class _FakeHttpSession:
+    """Minimal session exposing the .get() used by check_firmware."""
+
+    def __init__(self, response: _FakeResponse) -> None:
+        self._response = response
+        self.requested_url: str | None = None
+
+    def get(self, url: str, **kwargs: object) -> _FakeResponse:
+        self.requested_url = url
+        return self._response
+
+    async def close(self) -> None:
+        return None
+
+
+async def test_check_firmware_success() -> None:
+    """A successful lookup returns a populated FirmwareRelease."""
+    client = InvisOutletClient("device.local")
+    client._session = _FakeHttpSession(  # type: ignore[assignment]
+        _FakeResponse(
+            {"available_fw_rev": "2.0", "ota_bin_url": "http://x/fw.bin", "message": "notes"}
+        )
+    )
+    release = await client.check_firmware(OtaTarget.INVISOUTLET, "InvisOutlet", "1", "1.0")
+    assert release is not None
+    assert release.available_fw_rev == "2.0"
+    assert release.update_available is True
+
+
+async def test_check_firmware_variant_overrides_model() -> None:
+    """The variant (faceplate type) wins over the model for the product code."""
+    session = _FakeHttpSession(
+        _FakeResponse({"available_fw_rev": "1.0", "ota_bin_url": "", "message": ""})
+    )
+    client = InvisOutletClient("device.local")
+    client._session = session  # type: ignore[assignment]
+    await client.check_firmware(
+        OtaTarget.INVISDECO, "InvisDeco", "1", "1.0", variant="Aura"
+    )
+    assert session.requested_url is not None
+    assert "/PM/LIP1/" in session.requested_url  # Aura -> LIP1, not InvisDeco's PRP1
+
+
+async def test_check_firmware_unknown_model_returns_none() -> None:
+    """A model with no known product code has no update channel."""
+    client = InvisOutletClient("device.local")
+    client._session = _FakeHttpSession(_FakeResponse({}))  # type: ignore[assignment]
+    assert (
+        await client.check_firmware(OtaTarget.INVISOUTLET, "Mystery", "1", "1.0")
+        is None
+    )
+
+
+async def test_check_firmware_not_connected_raises() -> None:
+    """Without a session the firmware check cannot run."""
+    client = InvisOutletClient("device.local")
+    with pytest.raises(InvisOutletConnectionError):
+        await client.check_firmware(OtaTarget.INVISOUTLET, "InvisOutlet", "1", "1.0")
+
+
+async def test_check_firmware_http_error_wrapped() -> None:
+    """A transport error surfaces as InvisOutletConnectionError."""
+    client = InvisOutletClient("device.local")
+    client._session = _FakeHttpSession(  # type: ignore[assignment]
+        _FakeResponse(None, error=aiohttp.ClientError("server exploded"))
+    )
+    with pytest.raises(InvisOutletConnectionError):
+        await client.check_firmware(OtaTarget.INVISOUTLET, "InvisOutlet", "1", "1.0")

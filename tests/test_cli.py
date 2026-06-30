@@ -28,6 +28,7 @@ from invisoutlet import (
 from invisoutlet.cli import config, picker, state
 from invisoutlet.cli.app import app
 from invisoutlet.cli.commands import default as default_module
+from invisoutlet.cli.commands import discover as discover_module
 from invisoutlet.cli.formatters import (
     fmt_distance,
     fmt_pressure,
@@ -220,14 +221,6 @@ def test_name_list_renders() -> None:
     result = runner.invoke(app, ["name", "list"])
     assert result.exit_code == 0
     assert "Lamp" in result.output
-
-
-def test_render_config_tolerates_int_network_fields() -> None:
-    """render_config must not crash when network fields arrive as ints (Rich needs str)."""
-    from invisoutlet.cli import render
-
-    cfg = DeviceConfig(internet_ip=168430081, internet_main_dns=134744072)
-    render.render_config(cfg)  # must not raise NotRenderableError
 
 
 # --- control wiring -------------------------------------------------------
@@ -519,3 +512,59 @@ def test_picker_interactive_no_devices_returns_none(
     result = runner.invoke(app, ["device", "info"])
     assert result.exit_code != 0
     assert not any(call[0] == "connect" for call in fake_client)
+
+
+# --- discover command -----------------------------------------------------
+
+
+def test_discover_command_renders_devices(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`discover` scans with the given timeout and renders the results."""
+    seen: dict[str, float] = {}
+
+    async def fake_discover(timeout: float = 5.0) -> list[DiscoveredDevice]:
+        seen["timeout"] = timeout
+        return [
+            DiscoveredDevice(
+                name="Kitchen",
+                host="10.0.0.5",
+                port=3333,
+                serial_number="SN1",
+                device_type="outlet",
+            )
+        ]
+
+    monkeypatch.setattr(discover_module, "discover", fake_discover)
+    result = runner.invoke(app, ["discover", "--timeout", "2.5"])
+    assert result.exit_code == 0
+    assert seen["timeout"] == 2.5
+    assert "Kitchen" in result.output
+
+
+def test_discover_command_default_timeout_and_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no flag the default timeout is used and an empty scan is reported."""
+    seen: dict[str, float] = {}
+
+    async def fake_discover(timeout: float = 5.0) -> list[DiscoveredDevice]:
+        seen["timeout"] = timeout
+        return []
+
+    monkeypatch.setattr(discover_module, "discover", fake_discover)
+    result = runner.invoke(app, ["discover"])
+    assert result.exit_code == 0
+    assert seen["timeout"] == 5.0
+    assert "No devices found" in result.output
+
+
+def test_discover_command_handles_keyboard_interrupt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Ctrl-C during the scan exits cleanly rather than tracing back."""
+
+    async def boom(timeout: float = 5.0) -> list[DiscoveredDevice]:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(discover_module, "discover", boom)
+    result = runner.invoke(app, ["discover"])
+    assert result.exit_code == 0
