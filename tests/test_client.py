@@ -188,29 +188,6 @@ async def test_set_color_hsv(
     assert payload["callbackArgs"] == [5, 1, [[1, 90, [200, 80]]]]
 
 
-async def test_set_color_effect(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
-) -> None:
-    """set_color_effect round-trips the full frame: read, switch mode, recolour."""
-    client, ws = connected_client
-    # Device's current full frame (2 LEDs + undocumented trailing fields).
-    ws.responses[18] = [5, 1, [[1, 40, [27, 35], 4000]] * 2, 1, 0, 40]
-    await client.set_color_effect(
-        LIGHT_NIGHTLIGHT, ColorEffect.RAINBOW, hue=200, saturation=80, brightness=90
-    )
-    payload = _last(ws)
-    assert payload["callbackName"] == 17
-    # mode -> 6, LEDs recoloured/dimmed, kelvin + trailing fields preserved.
-    assert payload["callbackArgs"] == [
-        5,
-        6,
-        [[1, 90, [200, 80], 4000], [1, 90, [200, 80], 4000]],
-        1,
-        0,
-        40,
-    ]
-
-
 async def test_set_color_pixels(
     connected_client: tuple[InvisOutletClient, FakeWebSocket],
 ) -> None:
@@ -844,35 +821,6 @@ async def test_set_color_effect_pixels(
         1,
         3,
     ]
-
-
-async def test_set_color_led_updates_one_led(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
-) -> None:
-    """set_color_led changes only the targeted LED and keeps the frame's mode."""
-    client, ws = connected_client
-    ws.responses[18] = [5, 1, [[1, 40, [27, 35], 4000], [1, 40, [27, 35], 4000]]]
-    await client.set_color_led(
-        LIGHT_NIGHTLIGHT, 1, hue=200, saturation=70, brightness=90, on=False
-    )
-    payload = _last(ws)
-    assert payload["callbackName"] == 17
-    assert payload["callbackArgs"] == [
-        5,
-        1,
-        [[1, 40, [27, 35], 4000], [0, 90, [200, 70], 4000]],
-    ]
-
-
-async def test_set_color_led_out_of_range_is_noop(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
-) -> None:
-    """An out-of-range index leaves every LED untouched."""
-    client, ws = connected_client
-    ws.responses[18] = [5, 1, [[1, 40, [27, 35], 4000]]]
-    await client.set_color_led(LIGHT_NIGHTLIGHT, 9, hue=200)
-    payload = _last(ws)
-    assert payload["callbackArgs"] == [5, 1, [[1, 40, [27, 35], 4000]]]
 
 
 # --- sub-device commands --------------------------------------------------

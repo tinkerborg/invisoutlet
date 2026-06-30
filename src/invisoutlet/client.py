@@ -606,37 +606,6 @@ class InvisOutletClient:
         ]
         await self._set_color_temperature(light, leds, timeout)
 
-    async def set_color_effect(
-        self,
-        light: int,
-        effect: ColorEffect | int,
-        hue: int | None = None,
-        saturation: int | None = None,
-        brightness: int | None = None,
-        timeout: float = 5.0,
-    ) -> dict[str, Any]:
-        """Run an animated effect on a colour array (``light`` selector).
-
-        Effects need the device's full frame (including undocumented trailing
-        fields), so this reads the current state, switches to the effect mode,
-        optionally re-colours/dims the array, and writes the frame back verbatim.
-        The HSV values seed effects that use a base colour (e.g. breathing);
-        self-colouring effects (rainbow, cycle) ignore them.
-        """
-        state = await self._get_color(light, timeout)
-        state.mode = int(effect)
-        for led in state.leds:
-            led.state = True
-            if hue is not None:
-                led.hue = hue
-            if saturation is not None:
-                led.saturation = saturation
-            if brightness is not None:
-                led.brightness = brightness
-        return await self._send_request(
-            CALLBACK_COLOR_LIGHT_TEMPERATURE, state.to_raw(), timeout
-        )
-
     async def set_color_pixels(
         self,
         light: int,
@@ -695,37 +664,6 @@ class InvisOutletClient:
         state = ColorLightState(light=light, mode=int(effect), leds=leds)
         payload = [*state.to_hsv_raw(), speed, int(randomize), level]
         await self._send_request(CALLBACK_COLOR_LIGHT_TEMPERATURE, payload, timeout)
-
-    async def set_color_led(
-        self,
-        light: int,
-        index: int,
-        *,
-        hue: int | None = None,
-        saturation: int | None = None,
-        brightness: int | None = None,
-        on: bool | None = None,
-        timeout: float = 5.0,
-    ) -> dict[str, Any]:
-        """Set one LED's fields, leaving the others and the array's mode intact.
-
-        Round-trips the current frame so per-LED colour holds under an effect.
-        Only the provided fields are changed.
-        """
-        state = await self._get_color(light, timeout)
-        if 0 <= index < len(state.leds):
-            led = state.leds[index]
-            if on is not None:
-                led.state = on
-            if hue is not None:
-                led.hue = hue
-            if saturation is not None:
-                led.saturation = saturation
-            if brightness is not None:
-                led.brightness = brightness
-        return await self._send_request(
-            CALLBACK_COLOR_LIGHT_TEMPERATURE, state.to_raw(), timeout
-        )
 
     async def get_color(self, light: int, timeout: float = 5.0) -> ColorLightState:
         """Fetch a colour array's state (``light`` selector).
