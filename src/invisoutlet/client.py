@@ -7,7 +7,7 @@ from functools import partial
 import json
 import logging
 import random
-from typing import Any
+from typing import Any, TypeVar
 
 import aiohttp
 
@@ -143,9 +143,10 @@ _RECONNECT_MAX_DELAY = 60.0
 _WS_HEARTBEAT = 10.0
 
 
-def _add_to(
-    callbacks: list[Callable[[], None]], callback: Callable[[], None]
-) -> Callable[[], None]:
+_CB = TypeVar("_CB", bound=Callable[..., None])
+
+
+def _add_to(callbacks: list[_CB], callback: _CB) -> Callable[[], None]:
     """Append a callback to a list and return an unsubscribe function."""
     callbacks.append(callback)
 
@@ -156,11 +157,11 @@ def _add_to(
     return _remove
 
 
-def _fire(callbacks: list[Callable[[], None]], name: str) -> None:
-    """Invoke each callback, logging and swallowing errors."""
+def _fire(callbacks: list[Callable[..., None]], name: str, *args: object) -> None:
+    """Invoke each callback with ``args``, logging and swallowing errors."""
     for callback in list(callbacks):
         try:
-            callback()
+            callback(*args)
         except Exception:
             _LOGGER.exception("Error in %s callback", name)
 
@@ -883,21 +884,11 @@ class InvisOutletClient:
         per update: a real ``status=1`` success, a real failure after progress
         began, or the synthesized stall failure.
         """
-        self._ota_result_callbacks.append(callback)
-
-        def _remove() -> None:
-            if callback in self._ota_result_callbacks:
-                self._ota_result_callbacks.remove(callback)
-
-        return _remove
+        return _add_to(self._ota_result_callbacks, callback)
 
     def _notify_ota_result(self, result: OtaResult) -> None:
         """Fan a (real or synthesized) result out to the gated subscribers."""
-        for callback in list(self._ota_result_callbacks):
-            try:
-                callback(result)
-            except Exception:
-                _LOGGER.exception("Error in on_ota_result callback")
+        _fire(self._ota_result_callbacks, "on_ota_result", result)
 
     def _on_raw_ota_progress(self, msg: dict[str, Any]) -> None:
         """Internal: mark progress seen and reset the stall timer."""
