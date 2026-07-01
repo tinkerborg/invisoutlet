@@ -1,17 +1,18 @@
 name: release
 
-# Cuts a GitHub release whenever the version in pyproject.toml changes on the
-# default branch. The release tag is v<version>; notes are auto-generated from
-# the PRs merged since the previous tag.
+# Whenever the version in pyproject.toml changes on the default branch: cut a
+# GitHub release (tag v<version>, notes auto-generated from PRs since the last
+# tag) and, if a new release was created, build and publish it to PyPI.
+#
+# Both steps live here (rather than a separate publish workflow triggered by the
+# release event) because a release created with GITHUB_TOKEN does not trigger
+# other workflows. Publishing as a dependent job in the same run avoids that.
 
 on:
   push:
     branches: [main, master]
     paths: [pyproject.toml]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 concurrency:
   group: release
@@ -20,6 +21,10 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      created: ${{ steps.create.outputs.created }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -30,12 +35,28 @@ jobs:
           version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Create release if the tag doesn't exist yet
+        id: create
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ steps.ver.outputs.version }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists; nothing to do."
+            echo "created=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # required for PyPI trusted publishing
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v8.2.0
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
