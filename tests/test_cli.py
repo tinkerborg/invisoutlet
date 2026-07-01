@@ -7,6 +7,7 @@ rendering without any network access.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,19 @@ from invisoutlet.cli.formatters import (
 from invisoutlet.models import OtaResult
 
 runner = CliRunner()
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    """Strip ANSI codes so assertions don't break on Rich's color highlighting.
+
+    In a color-capable environment (e.g. CI) Rich styles option flags and splits
+    them with escape codes — ``--off`` renders as ``-``+``-off`` with codes
+    between — so a raw substring check fails. Stripping the codes restores the
+    plain text.
+    """
+    return _ANSI.sub("", text)
 
 
 class RecordingClient:
@@ -193,8 +207,9 @@ def test_command_help_shows_arguments() -> None:
     """Per-command help documents its arguments (the original complaint)."""
     result = runner.invoke(app, ["nightlight", "aura", "color", "--help"])
     assert result.exit_code == 0
-    assert "HUE" in result.output
-    assert "--off" in result.output
+    out = _plain(result.output)
+    assert "HUE" in out
+    assert "--off" in out
 
 
 # --- read / render --------------------------------------------------------

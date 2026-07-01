@@ -1,8 +1,8 @@
 # invisoutlet
 
-[![ci](https://github.com/tinkerborg/invisoutlet/actions/workflows/ci.yml/badge.svg)](https://github.com/tinkerborg/invisoutlet/actions/workflows/ci.yml)
+[![ci](https://github.com/tinkerborg/invisoutlet/actions/workflows/ci.yaml/badge.svg)](https://github.com/tinkerborg/invisoutlet/actions/workflows/ci.yaml)
 [![codecov](https://codecov.io/gh/tinkerborg/invisoutlet/graph/badge.svg)](https://codecov.io/gh/tinkerborg/invisoutlet)
-[![docs](https://github.com/tinkerborg/invisoutlet/actions/workflows/docs.yml/badge.svg)](https://tinkerborg.github.io/invisoutlet/)
+[![docs](https://github.com/tinkerborg/invisoutlet/actions/workflows/docs.yaml/badge.svg)](https://tinkerborg.github.io/invisoutlet/)
 [![PyPI](https://img.shields.io/pypi/v/invisoutlet)](https://pypi.org/project/invisoutlet/)
 [![Python](https://img.shields.io/pypi/pyversions/invisoutlet)](https://pypi.org/project/invisoutlet/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/tinkerborg/invisoutlet/blob/HEAD/LICENSE)
