@@ -1,36 +1,36 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
+requires = ["setuptools>=68.0", "wheel"]
 
 [project]
-name = "invisoutlet"
-version = "1.0.0"
-description = "Python client library and CLI for InvisOutlet smart outlets"
-readme = "README.md"
-requires-python = ">=3.13"
-license = "MIT"
-authors = [{ name = "tinkerborg" }]
-keywords = ["invisoutlet", "smart outlet", "home automation", "iot", "websocket"]
+authors = [{name = "tinkerborg"}]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
-    "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-    "Topic :: Home Automation",
-    "Operating System :: OS Independent",
-    "Typing :: Typed",
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Home Automation",
+  "Operating System :: OS Independent",
+  "Typing :: Typed",
 ]
 dependencies = [
-    "aiohttp>=3.9",
-    "zeroconf>=0.131",
+  "aiohttp>=3.9",
+  "zeroconf>=0.131",
 ]
+description = "Python client library and CLI for InvisOutlet smart outlets"
+keywords = ["invisoutlet", "smart outlet", "home automation", "iot", "websocket"]
+license = "MIT"
+name = "invisoutlet"
+readme = "README.md"
+requires-python = ">=3.13"
+version = "1.0.0"
 
 [project.urls]
-Homepage = "https://github.com/tinkerborg/invisoutlet"
-Repository = "https://github.com/tinkerborg/invisoutlet"
 Documentation = "https://tinkerborg.github.io/invisoutlet/"
+Homepage = "https://github.com/tinkerborg/invisoutlet"
 Issues = "https://github.com/tinkerborg/invisoutlet/issues"
+Repository = "https://github.com/tinkerborg/invisoutlet"
 
 [project.scripts]
 invis = "invisoutlet.cli.app:app"
@@ -40,25 +40,23 @@ invis = "invisoutlet.cli.app:app"
 # `invisoutlet[cli]`. Kept out of the base deps so embedding the library
 # (e.g. in a Home Assistant integration) doesn't pull in typer/rich/questionary.
 cli = [
-    "typer>=0.12",
-    "rich>=13",
-    "questionary>=2.0",
+  "typer>=0.12",
+  "rich>=13",
+  "questionary>=2.0",
 ]
 dev = [
-    "invisoutlet[cli]",
-    "pytest>=8.0",
-    "pytest-asyncio>=0.23",
-    "pytest-cov>=5.0",
+  "invisoutlet[cli]",
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "pytest-cov>=5.0",
 ]
 docs = [
-    # mkdocs-click imports the CLI module to render its reference, which pulls
-    # in typer/rich/questionary.
-    "invisoutlet[cli]",
-    "mkdocs>=1.6",
-    "mkdocs-material>=9.5",
-    "mkdocstrings[python]>=0.26",
-    "mkdocs-click>=0.8",
-    "mkdocs-gen-files>=0.5",
+  "invisoutlet[cli]",
+  "mkdocs>=1.6",
+  "mkdocs-material>=9.5",
+  "mkdocstrings[python]>=0.26",
+  "mkdocs-click>=0.8",
+  "mkdocs-gen-files>=0.5",
 ]
 
 [tool.setuptools.packages.find]
