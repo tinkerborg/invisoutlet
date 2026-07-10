@@ -118,7 +118,7 @@ LIGHT_NIGHTLIGHT = 5
 
 # Color-temperature range the color arrays accept, in kelvin.
 MIN_KELVIN = 1000
-MAX_KELVIN = 40000
+MAX_KELVIN = 6500
 
 
 class ColorEffect(IntEnum):
