@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Self
 
 import aiohttp
 import pytest
@@ -28,15 +28,31 @@ from invisoutlet.client import (
     CALLBACK_RESET_NETWORK,
     CALLBACK_RESTART,
     CALLBACK_SENSOR_DATA,
-    ColorEffect,
     LIGHT_NIGHTLIGHT,
+    ColorEffect,
     target_for_device_type,
 )
 
-from .conftest import FakeMessage, FakeSession, FakeWebSocket
+from .conftest import FakeTransport
 
 
-def _last(ws: FakeWebSocket) -> dict:
+def _queue_transports(
+    client: InvisOutletClient, *transports: FakeTransport
+) -> list[FakeTransport]:
+    """Make ``client`` connect to the given fake transports, in order.
+
+    Each (re)connect pops the next queued transport; append more to the returned
+    list to satisfy later reconnect attempts. An empty queue makes a connect
+    attempt fail, exercising the backoff path.
+    """
+    queue = list(transports)
+    client._transport_candidates = (  # type: ignore[assignment,method-assign]
+        lambda: ([queue.pop(0)] if queue else [])
+    )
+    return queue
+
+
+def _last(ws: FakeTransport) -> dict:
     """Return the payload of the most recent request."""
     return ws.sent[-1]["payload"]
 
@@ -47,7 +63,7 @@ def _raise(*_args: object) -> None:
 
 
 async def test_set_outlet_framing(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """set_outlet should send callbackName 10 with [outlet, 0/1]."""
     client, ws = connected_client
@@ -59,7 +75,7 @@ async def test_set_outlet_framing(
 
 
 async def test_get_config(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """get_config should parse the nested response into a DeviceConfig."""
     client, ws = connected_client
@@ -70,7 +86,7 @@ async def test_get_config(
 
 
 async def test_set_config_builds_nested_payload(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """set_config should send only the provided fields, nested correctly."""
     client, ws = connected_client
@@ -83,7 +99,7 @@ async def test_set_config_builds_nested_payload(
 
 
 async def test_get_device_info(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """get_device_info should parse IM and inject host/port."""
     client, ws = connected_client
@@ -95,7 +111,7 @@ async def test_get_device_info(
 
 
 async def test_accessory_names_round_trip(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """get/set accessory names should use the documented framing."""
     client, ws = connected_client
@@ -123,7 +139,7 @@ async def test_accessory_names_round_trip(
     ],
 )
 async def test_no_reply_commands(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
     method: str,
     callback: int,
 ) -> None:
@@ -137,7 +153,7 @@ async def test_no_reply_commands(
 
 
 async def test_get_outlet_status(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """get_outlet_status should parse the positional array."""
     client, ws = connected_client
@@ -148,7 +164,7 @@ async def test_get_outlet_status(
 
 
 async def test_nightlight(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """set/get nightlight should use [mode, brightness]."""
     client, ws = connected_client
@@ -162,7 +178,7 @@ async def test_nightlight(
 
 
 async def test_set_color_temperature_and_get(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """set_color_temperature (17) and get_color (18)."""
     client, ws = connected_client
@@ -178,7 +194,7 @@ async def test_set_color_temperature_and_get(
 
 
 async def test_set_color_hsv(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """set_color_hsv (17) should frame as mode 1 with [[state, bri, [hue, sat]]]."""
     client, ws = connected_client
@@ -189,7 +205,7 @@ async def test_set_color_hsv(
 
 
 async def test_set_color_pixels(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """set_color_pixels round-trips: recolor LEDs 0..N in order, keep the rest."""
     client, ws = connected_client
@@ -216,7 +232,7 @@ async def test_set_color_pixels(
 
 
 async def test_get_color_missing_raises(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """get_color raises a clear error when no light data comes back."""
     client, ws = connected_client
@@ -226,7 +242,7 @@ async def test_get_color_missing_raises(
 
 
 async def test_available_updates(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """get_available_updates should parse the IM/PM revisions."""
     client, ws = connected_client
@@ -236,7 +252,7 @@ async def test_available_updates(
 
 
 async def test_perform_ota_update_framing(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """perform_ota_update should send [target, method]."""
     client, ws = connected_client
@@ -245,13 +261,13 @@ async def test_perform_ota_update_framing(
     assert _last(ws)["callbackArgs"] == [2, 0]
 
 
-def _push_ota(ws: FakeWebSocket, callback: int, args: list[int]) -> None:
+def _push_ota(ws: FakeTransport, callback: int, args: list[int]) -> None:
     """Inject an OTA progress/result push."""
     ws.push({"packetID": 1, "payload": {"callbackName": callback, "callbackArgs": args}})
 
 
 async def test_ota_result_suppresses_spurious_pre_progress(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """A status-0 result before any progress is the firmware's junk start signal."""
     client, ws = connected_client
@@ -263,7 +279,7 @@ async def test_ota_result_suppresses_spurious_pre_progress(
 
 
 async def test_ota_result_forwards_failure_after_progress(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """A status-0 result once progress has started is a genuine failure."""
     client, ws = connected_client
@@ -279,7 +295,7 @@ async def test_ota_result_forwards_failure_after_progress(
 
 
 async def test_ota_result_forwards_success(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """A status-1 result is always forwarded as a success."""
     client, ws = connected_client
@@ -292,7 +308,7 @@ async def test_ota_result_forwards_success(
 
 
 async def test_ota_result_suppresses_www_subphase(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """A device_type-3 (WWW partition) success is a sub-phase, not terminal."""
     client, ws = connected_client
@@ -309,11 +325,11 @@ async def test_ota_result_suppresses_www_subphase(
 
 
 async def test_ota_stall_synthesizes_failure(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """No progress within the stall timeout yields a synthesized failure result."""
-    client, ws = connected_client
+    client, _ws = connected_client
     monkeypatch.setattr("invisoutlet.client._OTA_STALL_TIMEOUT", 0.05)
     results: list[OtaResult] = []
     client.on_ota_result(results.append)
@@ -325,7 +341,7 @@ async def test_ota_stall_synthesizes_failure(
 
 
 async def test_ota_progress_resets_stall_timer(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Each progress push pushes the stall deadline back."""
@@ -343,7 +359,7 @@ async def test_ota_progress_resets_stall_timer(
 
 
 async def test_calibrate_temp_humidity_converts_to_millis(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """Calibration values should be sent in milli-units."""
     client, ws = connected_client
@@ -352,7 +368,7 @@ async def test_calibrate_temp_humidity_converts_to_millis(
 
 
 async def test_calibrate_occupancy(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """Occupancy calibration should send [durationSeconds]."""
     client, ws = connected_client
@@ -361,7 +377,7 @@ async def test_calibrate_occupancy(
 
 
 async def test_puback_failure_raises(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """A PUBACK of 0 should raise InvisOutletCommandError."""
     client, ws = connected_client
@@ -371,7 +387,7 @@ async def test_puback_failure_raises(
 
 
 async def test_timeout_raises(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """A response that never arrives should raise InvisOutletTimeoutError."""
     client, ws = connected_client
@@ -388,7 +404,7 @@ async def test_not_connected_raises() -> None:
 
 
 async def test_sensor_data_push_dispatch(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """on_sensor_data should fire for server-pushed sensor messages."""
     client, ws = connected_client
@@ -423,7 +439,7 @@ async def test_sensor_data_push_dispatch(
 
 
 async def test_on_outlet_status_push(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """on_outlet_status should fire for server-pushed outlet messages."""
     client, ws = connected_client
@@ -448,13 +464,9 @@ async def test_auto_reconnect(monkeypatch: pytest.MonkeyPatch) -> None:
     """A dropped connection is re-established and listeners keep firing."""
     monkeypatch.setattr("invisoutlet.client._RECONNECT_INITIAL_DELAY", 0.01)
 
-    session = FakeSession()
-    ws1, ws2 = FakeWebSocket(), FakeWebSocket()
-    session.queue_ws(ws1)
-    session.queue_ws(ws2)
-
+    t1, t2 = FakeTransport(), FakeTransport()
     client = InvisOutletClient("device.local")
-    client._session = session  # type: ignore[assignment]
+    _queue_transports(client, t1, t2)
 
     received: list[SensorData] = []
     connects: list[int] = []
@@ -464,20 +476,20 @@ async def test_auto_reconnect(monkeypatch: pytest.MonkeyPatch) -> None:
     client.on_disconnect(lambda: disconnects.append(1))
 
     await client.connect()
-    assert client._ws is ws1
+    assert client._transport is t1
 
-    # Drop the first connection; the supervisor should reconnect to ws2.
-    await ws1.close()
+    # Drop the first connection; the supervisor should reconnect to t2.
+    await t1.close()
     for _ in range(50):
         await asyncio.sleep(0.01)
-        if client._ws is ws2:
+        if client._transport is t2:
             break
-    assert client._ws is ws2
+    assert client._transport is t2
     assert len(connects) >= 2  # initial connect + reconnect
     assert len(disconnects) >= 1
 
     # The listener registered before the drop still fires on the new connection.
-    ws2.push(
+    t2.push(
         {
             "payload": {
                 "callbackName": CALLBACK_SENSOR_DATA,
@@ -492,7 +504,7 @@ async def test_auto_reconnect(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def test_ota_push_dispatch(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """on_ota_progress and on_ota_result should fire for pushed events."""
     client, ws = connected_client
@@ -529,26 +541,40 @@ def test_target_for_device_type_unknown() -> None:
     assert target_for_device_type(2) is OtaTarget.INVISDECO
 
 
-async def test_connect_initial_failure_cleans_up(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A failed initial connect raises and leaves no dangling session."""
-    # No queued socket → FakeSession.ws_connect raises like a refused connection.
-    monkeypatch.setattr("invisoutlet.client.aiohttp.ClientSession", FakeSession)
+async def test_connect_initial_failure_cleans_up() -> None:
+    """A failed initial connect raises and leaves no dangling transport."""
+
+    class _FailingTransport:
+        name = "fail"
+
+        async def connect(self) -> None:
+            raise InvisOutletConnectionError("refused")
+
+        async def close(self) -> None:
+            pass
+
     client = InvisOutletClient("device.local")
+    client._transport_candidates = lambda: [_FailingTransport()]  # type: ignore[assignment,method-assign]
     with pytest.raises(InvisOutletConnectionError):
         await client.connect()
-    assert client._session is None
+    assert client._transport is None
     assert client._read_task is None
 
 
 async def test_connect_timeout_wraps_error() -> None:
-    """A timed-out handshake surfaces as InvisOutletTimeoutError."""
+    """A timed-out connect surfaces as InvisOutletTimeoutError."""
 
-    class TimeoutSession(FakeSession):
-        async def ws_connect(self, url: str, **kwargs: object) -> FakeWebSocket:
-            raise TimeoutError
+    class _TimeoutTransport:
+        name = "timeout"
+
+        async def connect(self) -> None:
+            raise InvisOutletTimeoutError("timeout")
+
+        async def close(self) -> None:
+            pass
 
     client = InvisOutletClient("device.local")
-    client._session = TimeoutSession()  # type: ignore[assignment]
+    client._transport_candidates = lambda: [_TimeoutTransport()]  # type: ignore[assignment,method-assign]
     with pytest.raises(InvisOutletTimeoutError):
         await client.connect()
 
@@ -556,21 +582,19 @@ async def test_connect_timeout_wraps_error() -> None:
 async def test_async_context_manager() -> None:
     """`async with` connects on enter and closes on exit."""
     client = InvisOutletClient("device.local")
-    session = FakeSession()
-    ws = FakeWebSocket()
-    session.queue_ws(ws)
-    client._session = session  # type: ignore[assignment]
+    transport = FakeTransport()
+    _queue_transports(client, transport)
 
     async with client as entered:
         assert entered is client
-        assert client._ws is ws
+        assert client._transport is transport
 
-    assert client._ws is None
+    assert client._transport is None
     assert client._closing is True
 
 
 async def test_close_cancels_pending_requests(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """Outstanding request futures are cancelled and cleared on close."""
     client, _ws = connected_client
@@ -582,16 +606,18 @@ async def test_close_cancels_pending_requests(
 
 
 async def test_handle_disconnect_fails_pending_and_tolerates_close_error(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """A disconnect fails in-flight requests even if the socket close errors."""
     client, _ws = connected_client
 
-    class BadWs:
+    class BadTransport:
+        name = "bad"
+
         async def close(self) -> None:
             raise RuntimeError("teardown boom")
 
-    client._ws = BadWs()  # type: ignore[assignment]
+    client._transport = BadTransport()  # type: ignore[assignment]
     disconnects: list[int] = []
     client.on_disconnect(lambda: disconnects.append(1))
     future: asyncio.Future[dict[str, Any]] = asyncio.get_event_loop().create_future()
@@ -608,33 +634,31 @@ async def test_handle_disconnect_fails_pending_and_tolerates_close_error(
 async def test_reconnect_retries_after_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """When the first reconnect attempt fails, it backs off and retries."""
     monkeypatch.setattr("invisoutlet.client._RECONNECT_INITIAL_DELAY", 0.01)
-    session = FakeSession()
-    ws1, ws2 = FakeWebSocket(), FakeWebSocket()
-    session.queue_ws(ws1)
-
+    t1, t2 = FakeTransport(), FakeTransport()
     client = InvisOutletClient("device.local")
-    client._session = session  # type: ignore[assignment]
+    queue = _queue_transports(client, t1)  # only t1 available initially
+
     await client.connect()
-    assert client._ws is ws1
+    assert client._transport is t1
 
     # Drop with nothing queued: reconnect attempts fail and back off.
-    await ws1.close()
+    await t1.close()
     await asyncio.sleep(0.05)
-    assert client._ws is None
+    assert client._transport is None
 
-    # Provide a socket; the next attempt should succeed.
-    session.queue_ws(ws2)
+    # Provide a transport; the next attempt should succeed.
+    queue.append(t2)
     for _ in range(100):
         await asyncio.sleep(0.01)
-        if client._ws is ws2:
+        if client._transport is t2:
             break
-    assert client._ws is ws2
+    assert client._transport is t2
 
     await client.close()
 
 
 async def test_callback_unsubscribe_and_error_isolation(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """A raising connect callback is isolated; unsubscribe is idempotent."""
     client, _ws = connected_client
@@ -659,49 +683,16 @@ async def test_send_command_noreply_not_connected() -> None:
 # --- read loop / dispatch -------------------------------------------------
 
 
-async def test_read_loop_skips_invalid_json(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
-) -> None:
-    """Invalid JSON is logged and skipped; the loop keeps reading."""
-    client, ws = connected_client
-    received: list[SensorData] = []
-    client.on_sensor_data(received.append)
-
-    ws._queue.put_nowait(FakeMessage(aiohttp.WSMsgType.TEXT, "{not json"))
-    ws.push(
-        {
-            "payload": {
-                "callbackName": CALLBACK_SENSOR_DATA,
-                "callbackArgs": [0, {"temp_celsius": 1.0}],
-            }
-        }
-    )
-    await asyncio.sleep(0.02)
-    assert received and received[0].temperature == 1.0
-
-
-@pytest.mark.parametrize(
-    "msg_type",
-    [aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED],
-)
-async def test_read_loop_breaks_on_control_frames(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
-    msg_type: aiohttp.WSMsgType,
-) -> None:
-    """An error/close frame ends the read loop cleanly."""
-    client, ws = connected_client
-    ws._queue.put_nowait(FakeMessage(msg_type, ""))
-    await asyncio.sleep(0.02)
-    assert client._read_task is not None
-    assert client._read_task.done()
-
-
 async def test_read_loop_swallows_unexpected_error(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
-    """An unexpected error inside the loop is caught rather than propagated."""
+    """An unexpected error inside the loop is caught rather than propagated.
+
+    (Transport-level framing — invalid JSON, control/close frames — is covered
+    in test_transport.py, where that logic now lives.)
+    """
     client, ws = connected_client
-    ws._queue.put_nowait(object())  # accessing .type raises AttributeError
+    ws._queue.put_nowait(object())  # a non-dict: _dispatch hits AttributeError
     await asyncio.sleep(0.02)
     assert client._read_task is not None
     assert client._read_task.done()
@@ -709,7 +700,7 @@ async def test_read_loop_swallows_unexpected_error(
 
 
 async def test_dispatch_isolates_listener_errors(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """One listener raising does not stop the others from running."""
     client, ws = connected_client
@@ -725,7 +716,7 @@ async def test_dispatch_isolates_listener_errors(
 
 
 async def test_on_message_generic_listener(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """on_message delivers the raw envelope for the given callback id."""
     client, ws = connected_client
@@ -741,7 +732,7 @@ async def test_on_message_generic_listener(
 
 
 async def test_on_outlet_status_ignores_empty_args(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """A push with no status list is ignored rather than mis-parsed."""
     client, ws = connected_client
@@ -757,7 +748,7 @@ async def test_on_outlet_status_ignores_empty_args(
 
 
 async def test_get_sensor_data(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """get_sensor_data parses the wrapped reading, else returns an empty model."""
     client, ws = connected_client
@@ -774,7 +765,7 @@ async def test_get_sensor_data(
 
 
 async def test_set_color_temperatures_per_led(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """Per-LED temperatures honour the optional states/brightness lists."""
     client, ws = connected_client
@@ -787,7 +778,7 @@ async def test_set_color_temperatures_per_led(
 
 
 async def test_set_color_pixels_with_brightness(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """set_color_pixels applies a per-LED brightness when given."""
     client, ws = connected_client
@@ -798,7 +789,7 @@ async def test_set_color_pixels_with_brightness(
 
 
 async def test_set_color_effect_pixels(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """set_color_effect_pixels frames the palette plus speed/randomize/level."""
     client, ws = connected_client
@@ -827,7 +818,7 @@ async def test_set_color_effect_pixels(
 
 
 async def test_invisdeco_subdevice_commands(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """restart/reset_invisdeco use callbacks 24 and 25."""
     client, ws = connected_client
@@ -841,7 +832,7 @@ async def test_invisdeco_subdevice_commands(
 
 
 async def test_ota_result_unsubscribe_and_error_isolation(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """A raising result callback is isolated; unsubscribe is idempotent."""
     client, ws = connected_client
@@ -858,7 +849,7 @@ async def test_ota_result_unsubscribe_and_error_isolation(
 
 
 async def test_raw_ota_pushes_ignore_malformed_and_unknown(
-    connected_client: tuple[InvisOutletClient, FakeWebSocket],
+    connected_client: tuple[InvisOutletClient, FakeTransport],
 ) -> None:
     """Short payloads and unknown device types don't arm the stall machinery."""
     client, ws = connected_client
@@ -880,7 +871,7 @@ class _FakeResponse:
         self._data = data
         self._error = error
 
-    async def __aenter__(self) -> "_FakeResponse":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *args: object) -> None:
@@ -912,7 +903,7 @@ class _FakeHttpSession:
 async def test_check_firmware_success() -> None:
     """A successful lookup returns a populated FirmwareRelease."""
     client = InvisOutletClient("device.local")
-    client._session = _FakeHttpSession(  # type: ignore[assignment]
+    client._http_session = _FakeHttpSession(  # type: ignore[assignment]
         _FakeResponse(
             {"available_fw_rev": "2.0", "ota_bin_url": "http://x/fw.bin", "message": "notes"}
         )
@@ -929,7 +920,7 @@ async def test_check_firmware_variant_overrides_model() -> None:
         _FakeResponse({"available_fw_rev": "1.0", "ota_bin_url": "", "message": ""})
     )
     client = InvisOutletClient("device.local")
-    client._session = session  # type: ignore[assignment]
+    client._http_session = session  # type: ignore[assignment]
     await client.check_firmware(
         OtaTarget.INVISDECO, "InvisDeco", "1", "1.0", variant="Aura"
     )
@@ -940,24 +931,36 @@ async def test_check_firmware_variant_overrides_model() -> None:
 async def test_check_firmware_unknown_model_returns_none() -> None:
     """A model with no known product code has no update channel."""
     client = InvisOutletClient("device.local")
-    client._session = _FakeHttpSession(_FakeResponse({}))  # type: ignore[assignment]
+    client._http_session = _FakeHttpSession(_FakeResponse({}))  # type: ignore[assignment]
     assert (
         await client.check_firmware(OtaTarget.INVISOUTLET, "Mystery", "1", "1.0")
         is None
     )
 
 
-async def test_check_firmware_not_connected_raises() -> None:
-    """Without a session the firmware check cannot run."""
-    client = InvisOutletClient("device.local")
-    with pytest.raises(InvisOutletConnectionError):
-        await client.check_firmware(OtaTarget.INVISOUTLET, "InvisOutlet", "1", "1.0")
+async def test_check_firmware_makes_own_session_without_connecting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The firmware check is a direct client→cloud call: it needs no device
+    connection and lazily creates its own HTTP session (not the transport's)."""
+    fake = _FakeHttpSession(
+        _FakeResponse({"available_fw_rev": "2.0", "ota_bin_url": "", "message": ""})
+    )
+    monkeypatch.setattr(
+        "invisoutlet.client.aiohttp.ClientSession", lambda *a, **k: fake
+    )
+    client = InvisOutletClient("device.local")  # never connected
+    release = await client.check_firmware(
+        OtaTarget.INVISOUTLET, "InvisOutlet", "1", "1.0"
+    )
+    assert release is not None and release.available_fw_rev == "2.0"
+    assert client._http_session is fake
 
 
 async def test_check_firmware_http_error_wrapped() -> None:
     """A transport error surfaces as InvisOutletConnectionError."""
     client = InvisOutletClient("device.local")
-    client._session = _FakeHttpSession(  # type: ignore[assignment]
+    client._http_session = _FakeHttpSession(  # type: ignore[assignment]
         _FakeResponse(None, error=aiohttp.ClientError("server exploded"))
     )
     with pytest.raises(InvisOutletConnectionError):

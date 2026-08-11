@@ -14,8 +14,7 @@ endorsed by InvisOutlet.
 
 ## Features
 
-- **Local-only** — speaks the device's on-device WebSocket API directly; no
-  cloud account, no internet dependency.
+- **Local-only** — communicates with device via local network. no cloud account, no internet dependency.
 - **Push-driven** — subscribe to live sensor, outlet, and OTA updates as the
   device emits them; auto-reconnects with backoff.
 - **Full device surface** — outlets, nightlight and Aura color arrays (static
