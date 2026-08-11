@@ -9,13 +9,13 @@ transport — the callback protocol and all command methods — is identical.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
-from enum import IntEnum
-from functools import partial
 import json
 import logging
 import random
-from typing import Any, TypeVar
+from collections.abc import Callable
+from enum import IntEnum
+from functools import partial
+from typing import Any, Self
 
 import aiohttp
 
@@ -25,7 +25,6 @@ from .exceptions import (
     InvisOutletError,
     InvisOutletTimeoutError,
 )
-from .transport import TcpTransport, WsTransport
 from .models import (
     AccessoryName,
     AvailableUpdates,
@@ -40,6 +39,7 @@ from .models import (
     OutletStatus,
     SensorData,
 )
+from .transport import TcpTransport, WsTransport
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -147,10 +147,7 @@ _RECONNECT_INITIAL_DELAY = 1.0
 _RECONNECT_MAX_DELAY = 60.0
 
 
-_CB = TypeVar("_CB", bound=Callable[..., None])
-
-
-def _add_to(callbacks: list[_CB], callback: _CB) -> Callable[[], None]:
+def _add_to[CB: Callable[..., None]](callbacks: list[CB], callback: CB) -> Callable[[], None]:
     """Append a callback to a list and return an unsubscribe function."""
     callbacks.append(callback)
 
@@ -341,15 +338,15 @@ class InvisOutletClient:
         if transport is not None:
             try:
                 await transport.close()
-            except Exception:  # noqa: BLE001 - best-effort teardown
-                pass
+            except Exception:
+                _LOGGER.debug("Error closing transport on disconnect", exc_info=True)
         for future in self._pending_requests.values():
             if not future.done():
                 future.set_exception(InvisOutletConnectionError("Connection lost"))
         self._pending_requests.clear()
         self._notify_disconnected()
 
-    async def __aenter__(self) -> InvisOutletClient:
+    async def __aenter__(self) -> Self:
         """Enter async context manager."""
         await self.connect()
         return self

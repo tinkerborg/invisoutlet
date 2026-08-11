@@ -12,7 +12,6 @@ from invisoutlet.transport import TcpTransport, WsTransport
 
 from .conftest import FakeMessage, FakeTransport
 
-
 # --- TcpTransport: newline / back-to-back / split reassembly ---------------
 
 

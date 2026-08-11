@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Self
 
 import aiohttp
 import pytest
@@ -28,8 +28,8 @@ from invisoutlet.client import (
     CALLBACK_RESET_NETWORK,
     CALLBACK_RESTART,
     CALLBACK_SENSOR_DATA,
-    ColorEffect,
     LIGHT_NIGHTLIGHT,
+    ColorEffect,
     target_for_device_type,
 )
 
@@ -329,7 +329,7 @@ async def test_ota_stall_synthesizes_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """No progress within the stall timeout yields a synthesized failure result."""
-    client, ws = connected_client
+    client, _ws = connected_client
     monkeypatch.setattr("invisoutlet.client._OTA_STALL_TIMEOUT", 0.05)
     results: list[OtaResult] = []
     client.on_ota_result(results.append)
@@ -871,7 +871,7 @@ class _FakeResponse:
         self._data = data
         self._error = error
 
-    async def __aenter__(self) -> "_FakeResponse":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *args: object) -> None:
