@@ -1,4 +1,10 @@
-"""Client for communicating with InvisOutlet devices over WebSocket."""
+"""Client for communicating with InvisOutlet devices.
+
+Control runs over a pluggable transport (see :mod:`.transport`): revB firmware
+speaks a raw-TCP line protocol on port 3333, revA a WebSocket on port 80. The
+client tries TCP first and falls back to the WebSocket; everything above the
+transport — the callback protocol and all command methods — is identical.
+"""
 
 from __future__ import annotations
 
@@ -19,6 +25,7 @@ from .exceptions import (
     InvisOutletError,
     InvisOutletTimeoutError,
 )
+from .transport import TcpTransport, WsTransport
 from .models import (
     AccessoryName,
     AvailableUpdates,
@@ -139,11 +146,6 @@ class ColorEffect(IntEnum):
 _RECONNECT_INITIAL_DELAY = 1.0
 _RECONNECT_MAX_DELAY = 60.0
 
-# WebSocket ping interval (seconds). Lets aiohttp detect a silently-dropped
-# connection (e.g. the device rebooting) instead of waiting forever for data.
-# This is also the detection latency, so keep it fairly low.
-_WS_HEARTBEAT = 10.0
-
 
 _CB = TypeVar("_CB", bound=Callable[..., None])
 
@@ -169,14 +171,24 @@ def _fire(callbacks: list[Callable[..., None]], name: str, *args: object) -> Non
 
 
 class InvisOutletClient:
-    """Client for InvisOutlet smart outlet devices over WebSocket."""
+    """Client for InvisOutlet smart outlet devices."""
 
-    def __init__(self, host: str, port: int = 80) -> None:
-        """Initialize the client."""
+    def __init__(self, host: str, port: int = 80, tcp_port: int = 3333) -> None:
+        """Initialize the client.
+
+        ``tcp_port`` is the revB raw-TCP line protocol (tried first); ``port`` is
+        the revA WebSocket fallback.
+        """
         self.host = host
         self.port = port
-        self._session: aiohttp.ClientSession | None = None
-        self._ws: aiohttp.ClientWebSocketResponse | None = None
+        self.tcp_port = tcp_port
+        self._transport: TcpTransport | WsTransport | None = None
+        # Which transport last connected, so reconnects prefer it (but still
+        # fall back to the other if it later fails).
+        self._preferred_name: str | None = None
+        # Own HTTP session for the cloud firmware lookup — independent of the
+        # device transport, which may not be HTTP-based at all.
+        self._http_session: aiohttp.ClientSession | None = None
         self._listeners: dict[int, list[Callable[[dict[str, Any]], None]]] = {}
         self._pending_requests: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._read_task: asyncio.Task[None] | None = None
@@ -202,9 +214,9 @@ class InvisOutletClient:
         """
         self._closing = False
         try:
-            await self._connect_ws()
+            await self._connect_transport()
         except InvisOutletError:
-            await self._cleanup_session()
+            await self._cleanup()
             raise
         self._read_task = asyncio.create_task(self._supervise())
 
@@ -219,7 +231,7 @@ class InvisOutletClient:
                 pass
             self._read_task = None
 
-        await self._cleanup_session()
+        await self._cleanup()
 
         # Cancel any pending requests
         for future in self._pending_requests.values():
@@ -233,26 +245,38 @@ class InvisOutletClient:
         self._ota_stall.clear()
         self._ota_seen_progress.clear()
 
-    async def _connect_ws(self) -> None:
-        """Open the WebSocket (creating the session if needed). Raises on failure."""
-        if self._session is None:
-            self._session = aiohttp.ClientSession()
-        try:
-            self._ws = await asyncio.wait_for(
-                self._session.ws_connect(
-                    f"ws://{self.host}:{self.port}/ws", heartbeat=_WS_HEARTBEAT
-                ),
-                timeout=10.0,
+    def _transport_candidates(self) -> list[TcpTransport | WsTransport]:
+        """Transports to try, in order — last-good first, then the other."""
+        candidates: list[TcpTransport | WsTransport] = [
+            TcpTransport(self.host, self.tcp_port),
+            WsTransport(self.host, self.port),
+        ]
+        candidates.sort(key=lambda t: t.name != self._preferred_name)
+        return candidates
+
+    async def _connect_transport(self) -> None:
+        """Connect via the first transport that succeeds. Raises if all fail."""
+        last_err: InvisOutletError | None = None
+        for transport in self._transport_candidates():
+            try:
+                await transport.connect()
+            except InvisOutletError as err:
+                last_err = err
+                _LOGGER.debug(
+                    "Transport %s to %s failed: %s", transport.name, self.host, err
+                )
+                await transport.close()
+                continue
+            self._transport = transport
+            self._preferred_name = transport.name
+            _LOGGER.debug(
+                "Connected to %s via %s transport", self.host, transport.name
             )
-        except TimeoutError as err:
-            raise InvisOutletTimeoutError(
-                f"Timeout connecting to {self.host}:{self.port}"
-            ) from err
-        except (OSError, aiohttp.ClientError) as err:
-            raise InvisOutletConnectionError(
-                f"Cannot connect to {self.host}:{self.port}: {err}"
-            ) from err
-        self._notify_connected()
+            self._notify_connected()
+            return
+        raise last_err or InvisOutletConnectionError(
+            f"Cannot connect to {self.host}"
+        )
 
     def on_connect(self, callback: Callable[[], None]) -> Callable[[], None]:
         """Register a callback invoked after each successful (re)connect.
@@ -277,14 +301,14 @@ class InvisOutletClient:
         """Fire the registered on-disconnect callbacks."""
         _fire(self._disconnect_callbacks, "on_disconnect")
 
-    async def _cleanup_session(self) -> None:
-        """Close the WebSocket and HTTP session."""
-        if self._ws is not None:
-            await self._ws.close()
-            self._ws = None
-        if self._session is not None:
-            await self._session.close()
-            self._session = None
+    async def _cleanup(self) -> None:
+        """Close the transport and the firmware-lookup HTTP session."""
+        if self._transport is not None:
+            await self._transport.close()
+            self._transport = None
+        if self._http_session is not None:
+            await self._http_session.close()
+            self._http_session = None
 
     async def _supervise(self) -> None:
         """Read messages, reconnecting with backoff until the client is closed."""
@@ -301,7 +325,7 @@ class InvisOutletClient:
                 if self._closing:
                     break
                 try:
-                    await self._connect_ws()
+                    await self._connect_transport()
                 except InvisOutletError as err:
                     _LOGGER.debug("Reconnect to %s failed: %s", self.host, err)
                     delay = min(delay * 2, _RECONNECT_MAX_DELAY)
@@ -313,10 +337,10 @@ class InvisOutletClient:
     async def _handle_disconnect(self) -> None:
         """Tear down a dropped connection and fail any in-flight requests."""
         _LOGGER.warning("Connection to %s lost; reconnecting", self.host)
-        ws, self._ws = self._ws, None
-        if ws is not None:
+        transport, self._transport = self._transport, None
+        if transport is not None:
             try:
-                await ws.close()
+                await transport.close()
             except Exception:  # noqa: BLE001 - best-effort teardown
                 pass
         for future in self._pending_requests.values():
@@ -729,14 +753,14 @@ class InvisOutletClient:
         product = _OTA_PRODUCT_CODES.get(variant) or _OTA_PRODUCT_CODES.get(model)
         if product is None:
             return None
-        if self._session is None:
-            raise InvisOutletConnectionError("Not connected")
+        if self._http_session is None:
+            self._http_session = aiohttp.ClientSession()
         url = (
             f"{_OTA_CHECK_BASE}/{_OTA_MODULE[target]}/{product}"
             f"/{hw_rev}/{current_fw_rev}"
         )
         try:
-            async with self._session.get(
+            async with self._http_session.get(
                 url, timeout=aiohttp.ClientTimeout(total=timeout)
             ) as resp:
                 resp.raise_for_status()
@@ -914,7 +938,7 @@ class InvisOutletClient:
         Raises ``InvisOutletCommandError`` if the device reports failure
         (``PUBACK == 0``) and ``InvisOutletTimeoutError`` on timeout.
         """
-        if not self._ws:
+        if self._transport is None:
             raise InvisOutletConnectionError("Not connected")
 
         packet_id = random.randint(100000, 999999)
@@ -926,7 +950,7 @@ class InvisOutletClient:
         self._pending_requests[packet_id] = future
 
         try:
-            await self._ws.send_str(message)
+            await self._transport.send(message)
             response = await asyncio.wait_for(future, timeout=timeout)
         except TimeoutError as err:
             raise InvisOutletTimeoutError(
@@ -948,40 +972,29 @@ class InvisOutletClient:
 
         Used for callbacks 5/6/7 (restart, network reset, factory reset).
         """
-        if not self._ws:
+        if self._transport is None:
             raise InvisOutletConnectionError("Not connected")
 
         packet_id = random.randint(100000, 999999)
         message = self._build_message(packet_id, callback_name, callback_args)
-        await self._ws.send_str(message)
+        await self._transport.send(message)
 
     async def _read_loop(self) -> None:
-        """Read messages from the WebSocket and dispatch them."""
-        assert self._ws is not None
+        """Read messages from the transport and dispatch them.
 
+        Returns when the transport's iterator stops (connection closed/errored);
+        :meth:`_supervise` then handles the disconnect and reconnect.
+        """
+        transport = self._transport
+        if transport is None:
+            return
         try:
-            async for msg in self._ws:
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    try:
-                        data = json.loads(msg.data)
-                    except json.JSONDecodeError:
-                        _LOGGER.warning("Received invalid JSON: %s", msg.data[:200])
-                        continue
-                    self._dispatch(data)
-                elif msg.type == aiohttp.WSMsgType.ERROR:
-                    _LOGGER.error("WebSocket error: %s", self._ws.exception())
-                    break
-                elif msg.type in (
-                    aiohttp.WSMsgType.CLOSE,
-                    aiohttp.WSMsgType.CLOSING,
-                    aiohttp.WSMsgType.CLOSED,
-                ):
-                    _LOGGER.debug("WebSocket closed by device")
-                    break
+            async for data in transport:
+                self._dispatch(data)
         except asyncio.CancelledError:
             raise
         except Exception:
-            _LOGGER.exception("Error in WebSocket read loop")
+            _LOGGER.exception("Error in transport read loop")
 
     def _dispatch(self, msg: dict[str, Any]) -> None:
         """Route a parsed message to the right handler."""
