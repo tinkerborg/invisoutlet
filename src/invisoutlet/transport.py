@@ -78,6 +78,8 @@ class TcpTransport:
         self._writer: asyncio.StreamWriter | None = None
         self._buf = ""
         self._pending: deque[dict[str, Any]] = deque()
+        # Why the connection ended, for the disconnect log line.
+        self.close_reason: str | None = None
         self._decoder = json.JSONDecoder()
 
     async def connect(self) -> None:
@@ -122,7 +124,9 @@ class TcpTransport:
         while not self._pending:
             chunk = await self._reader.read(_READ_CHUNK)
             if not chunk:
-                raise StopAsyncIteration  # EOF: device closed the connection
+                # EOF: device closed the connection.
+                self.close_reason = "device closed the connection"
+                raise StopAsyncIteration
             self._buf += chunk.decode(errors="replace")
             self._drain_buffer()
         return self._pending.popleft()
@@ -171,6 +175,8 @@ class WsTransport:
         self.port = port
         self._session: aiohttp.ClientSession | None = None
         self._ws: aiohttp.ClientWebSocketResponse | None = None
+        # Why the connection ended, for the disconnect log line.
+        self.close_reason: str | None = None
 
     async def connect(self) -> None:
         """Open the WebSocket (creating the session if needed). Raises on failure."""
@@ -214,14 +220,16 @@ class WsTransport:
                     _LOGGER.warning("Received invalid JSON: %s", msg.data[:200])
                     continue
             if msg.type == aiohttp.WSMsgType.ERROR:
-                _LOGGER.error("WebSocket error: %s", self._ws.exception())
+                self.close_reason = f"websocket error: {self._ws.exception()}"
                 raise StopAsyncIteration
             if msg.type in (
                 aiohttp.WSMsgType.CLOSE,
                 aiohttp.WSMsgType.CLOSING,
                 aiohttp.WSMsgType.CLOSED,
             ):
-                _LOGGER.debug("WebSocket closed by device")
+                self.close_reason = (
+                    f"device closed the websocket (code {self._ws.close_code})"
+                )
                 raise StopAsyncIteration
             # BINARY / PING / PONG etc.: ignore and wait for the next frame.
 
