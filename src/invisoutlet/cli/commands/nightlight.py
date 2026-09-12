@@ -90,7 +90,7 @@ def color(
 def temp(
     ctx: typer.Context,
     kelvin: int = typer.Argument(
-        ..., min=1000, max=40000, help="Color temperature in Kelvin."
+        ..., min=1000, max=6500, help="Color temperature in Kelvin."
     ),
     bri: int = _BRIGHTNESS,
     off: bool = _OFF,
