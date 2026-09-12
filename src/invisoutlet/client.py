@@ -990,6 +990,10 @@ class InvisOutletClient:
                 self._dispatch(data)
         except asyncio.CancelledError:
             raise
+        except OSError as err:
+            # Expected connection-level failure (reset by peer, keepalive
+            # timeout, ...): the supervisor reconnects; no traceback needed.
+            _LOGGER.debug("Connection error on read from %s: %s", self.host, err)
         except Exception:
             _LOGGER.exception("Error in transport read loop")
 

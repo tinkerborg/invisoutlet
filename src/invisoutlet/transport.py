@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import socket
 from collections import deque
 from typing import Any
 
@@ -34,6 +35,34 @@ _READ_CHUNK = 4096
 # WebSocket ping interval (seconds). Lets aiohttp detect a silently-dropped
 # connection (e.g. the device rebooting) instead of waiting forever for data.
 _WS_HEARTBEAT = 10.0
+
+# TCP keepalive tuning: after _KEEPALIVE_IDLE seconds of silence, probe every
+# _KEEPALIVE_INTERVAL seconds, and give up after _KEEPALIVE_COUNT unanswered
+# probes (erroring the pending read). Without this, a router dropping
+# connection state mid-flight (e.g. a gateway reboot) leaves the socket
+# half-open: it delivers nothing, never errors, and the read blocks forever.
+# ~30s total to declare the peer dead.
+_KEEPALIVE_IDLE = 15
+_KEEPALIVE_INTERVAL = 5
+_KEEPALIVE_COUNT = 3
+
+# The idle knob is TCP_KEEPIDLE on Linux/Windows but TCP_KEEPALIVE on macOS;
+# resolve whichever this platform has (None: use the platform default timing).
+_TCP_IDLE_OPT = getattr(socket, "TCP_KEEPIDLE", None) or getattr(
+    socket, "TCP_KEEPALIVE", None
+)
+
+
+def _enable_keepalive(sock: socket.socket) -> None:
+    """Turn on TCP keepalive with our timing on a connected socket."""
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    for opt, value in (
+        (_TCP_IDLE_OPT, _KEEPALIVE_IDLE),
+        (getattr(socket, "TCP_KEEPINTVL", None), _KEEPALIVE_INTERVAL),
+        (getattr(socket, "TCP_KEEPCNT", None), _KEEPALIVE_COUNT),
+    ):
+        if opt is not None:
+            sock.setsockopt(socket.IPPROTO_TCP, opt, value)
 
 
 class TcpTransport:
@@ -66,6 +95,15 @@ class TcpTransport:
             raise InvisOutletConnectionError(
                 f"Cannot connect to {self.host}:{self.port} (tcp): {err}"
             ) from err
+        assert self._writer is not None
+        sock = self._writer.get_extra_info("socket")
+        if sock is not None:
+            try:
+                _enable_keepalive(sock)
+            except OSError as err:
+                _LOGGER.warning(
+                    "Could not enable TCP keepalive for %s: %s", self.host, err
+                )
 
     async def send(self, message: str) -> None:
         """Send one JSON message, newline-terminated."""

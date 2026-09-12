@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import socket
 from typing import Any
 
 import aiohttp
 import pytest
 
 from invisoutlet import InvisOutletClient, InvisOutletConnectionError
-from invisoutlet.transport import TcpTransport, WsTransport
+from invisoutlet.transport import _TCP_IDLE_OPT, TcpTransport, WsTransport
 
 from .conftest import FakeMessage, FakeTransport
 
@@ -95,6 +97,28 @@ async def test_tcp_send_without_connect_raises() -> None:
     transport = TcpTransport("device.local")
     with pytest.raises(InvisOutletConnectionError):
         await transport.send("{}")
+
+
+async def test_tcp_connect_enables_keepalive() -> None:
+    """A connected socket has TCP keepalive on with our probe timing.
+
+    Without keepalive, a router dropping connection state (e.g. a gateway
+    reboot) leaves the socket half-open and the read blocked forever.
+    """
+    server = await asyncio.start_server(lambda r, w: None, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    transport = TcpTransport("127.0.0.1", port)
+    try:
+        await transport.connect()
+        sock = transport._writer.get_extra_info("socket")  # type: ignore[union-attr]
+        # Nonzero == enabled (BSD returns the flag's bit value, not 1).
+        assert sock.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE) != 0
+        if _TCP_IDLE_OPT is not None:
+            assert sock.getsockopt(socket.IPPROTO_TCP, _TCP_IDLE_OPT) == 15
+    finally:
+        await transport.close()
+        server.close()
+        await server.wait_closed()
 
 
 # --- WsTransport: frame typing -------------------------------------------
