@@ -42,6 +42,7 @@ class FakeTransport:
         self.responses: dict[int, Any] = {}
         self.puback: int = 1
         self.no_reply: set[int] = set()
+        self.close_reason: str | None = None
 
     async def connect(self) -> None:
         """No-op: tests inject this transport directly."""
