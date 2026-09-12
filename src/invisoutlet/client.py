@@ -104,6 +104,7 @@ _OTA_SUBPHASE_DEVICE_TYPE = 3
 # failed. The device emits a junk status-0 result at the start of every update
 # (indistinguishable from a real early failure), so a stall timer is the only
 # reliable way to detect a genuine pre-download failure.
+_OTA_START_TIMEOUT = 180.0
 _OTA_STALL_TIMEOUT = 60.0
 
 
@@ -783,7 +784,7 @@ class InvisOutletClient:
         """
         await self._send_command_noreply(CALLBACK_OTA_PERFORM, [int(target), method])
         self._ota_seen_progress.discard(target)
-        self._arm_ota_stall(target)
+        self._arm_ota_stall(target, _OTA_START_TIMEOUT)
 
     async def restart_invisdeco(self, timeout: float = 5.0) -> None:
         """Restart the attached InvisDeco sub-device."""
@@ -860,7 +861,7 @@ class InvisOutletClient:
         if target is None:
             return
         self._ota_seen_progress.add(target)
-        self._arm_ota_stall(target)
+        self._arm_ota_stall(target, _OTA_STALL_TIMEOUT)
 
     def _on_raw_ota_result(self, msg: dict[str, Any]) -> None:
         """Internal: gate a result push before notifying subscribers."""
@@ -891,11 +892,11 @@ class InvisOutletClient:
             self._ota_seen_progress.discard(target)
         self._notify_ota_result(result)
 
-    def _arm_ota_stall(self, target: OtaTarget) -> None:
-        """(Re)start the stall timer for a target."""
+    def _arm_ota_stall(self, target: OtaTarget, timeout: float) -> None:
+        """(Re)start the stall timer for a target with the given window."""
         self._cancel_ota_stall(target)
         self._ota_stall[target] = asyncio.get_event_loop().call_later(
-            _OTA_STALL_TIMEOUT, partial(self._on_ota_stall, target)
+            timeout, partial(self._on_ota_stall, target, timeout)
         )
 
     def _cancel_ota_stall(self, target: OtaTarget) -> None:
@@ -904,14 +905,14 @@ class InvisOutletClient:
         if handle is not None:
             handle.cancel()
 
-    def _on_ota_stall(self, target: OtaTarget) -> None:
+    def _on_ota_stall(self, target: OtaTarget, timeout: float) -> None:
         """Fire a synthesized failure result when an update stalls."""
         self._ota_stall.pop(target, None)
         self._ota_seen_progress.discard(target)
         _LOGGER.warning(
             "OTA update for %s stalled (no progress for %ss); reporting failure",
             target.name,
-            _OTA_STALL_TIMEOUT,
+            timeout,
         )
         self._notify_ota_result(OtaResult(device_type=int(target), status=0))
 
