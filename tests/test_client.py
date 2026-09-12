@@ -328,9 +328,9 @@ async def test_ota_stall_synthesizes_failure(
     connected_client: tuple[InvisOutletClient, FakeTransport],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No progress within the stall timeout yields a synthesized failure result."""
+    """No progress within the start timeout yields a synthesized failure result."""
     client, _ws = connected_client
-    monkeypatch.setattr("invisoutlet.client._OTA_STALL_TIMEOUT", 0.05)
+    monkeypatch.setattr("invisoutlet.client._OTA_START_TIMEOUT", 0.05)
     results: list[OtaResult] = []
     client.on_ota_result(results.append)
     await client.perform_ota_update(OtaTarget.INVISDECO, 0)
@@ -346,6 +346,7 @@ async def test_ota_progress_resets_stall_timer(
 ) -> None:
     """Each progress push pushes the stall deadline back."""
     client, ws = connected_client
+    monkeypatch.setattr("invisoutlet.client._OTA_START_TIMEOUT", 0.08)
     monkeypatch.setattr("invisoutlet.client._OTA_STALL_TIMEOUT", 0.08)
     results: list[OtaResult] = []
     client.on_ota_result(results.append)
@@ -354,6 +355,24 @@ async def test_ota_progress_resets_stall_timer(
     for pct in (10, 20, 30):
         await asyncio.sleep(0.04)
         _push_ota(ws, CALLBACK_OTA_PROGRESS, [2, pct])
+    await asyncio.sleep(0.01)
+    assert results == []
+
+
+async def test_ota_slow_first_progress_is_not_a_stall(
+    connected_client: tuple[InvisOutletClient, FakeTransport],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wait for the first progress push uses the longer start timeout."""
+    client, ws = connected_client
+    monkeypatch.setattr("invisoutlet.client._OTA_START_TIMEOUT", 0.3)
+    monkeypatch.setattr("invisoutlet.client._OTA_STALL_TIMEOUT", 0.05)
+    results: list[OtaResult] = []
+    client.on_ota_result(results.append)
+    await client.perform_ota_update(OtaTarget.INVISDECO, 0)
+    await asyncio.sleep(0.15)
+    assert results == []
+    _push_ota(ws, CALLBACK_OTA_PROGRESS, [2, 5])
     await asyncio.sleep(0.01)
     assert results == []
 
