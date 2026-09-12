@@ -267,7 +267,7 @@ class InvisOutletClient:
                 continue
             self._transport = transport
             self._preferred_name = transport.name
-            _LOGGER.debug(
+            _LOGGER.info(
                 "Connected to %s via %s transport", self.host, transport.name
             )
             self._notify_connected()
@@ -299,6 +299,11 @@ class InvisOutletClient:
         """Fire the registered on-disconnect callbacks."""
         _fire(self._disconnect_callbacks, "on_disconnect")
 
+    @property
+    def transport_name(self) -> str | None:
+        """Name of the connected transport (``"tcp"``/``"ws"``), None if down."""
+        return self._transport.name if self._transport is not None else None
+
     async def set_host(self, host: str) -> None:
         """Point the client at a new address, dropping the current connection.
 
@@ -327,11 +332,11 @@ class InvisOutletClient:
         """Read messages, reconnecting with backoff until the client is closed."""
         delay = _RECONNECT_INITIAL_DELAY
         while not self._closing:
-            await self._read_loop()
+            reason = await self._read_loop()
             if self._closing:
                 break
 
-            await self._handle_disconnect()
+            await self._handle_disconnect(reason)
 
             while not self._closing:
                 await asyncio.sleep(delay)
@@ -347,9 +352,13 @@ class InvisOutletClient:
                 delay = _RECONNECT_INITIAL_DELAY
                 break
 
-    async def _handle_disconnect(self) -> None:
+    async def _handle_disconnect(self, reason: str | None = None) -> None:
         """Tear down a dropped connection and fail any in-flight requests."""
-        _LOGGER.warning("Connection to %s lost; reconnecting", self.host)
+        _LOGGER.warning(
+            "Connection to %s lost (%s); reconnecting",
+            self.host,
+            reason or "reason unknown",
+        )
         transport, self._transport = self._transport, None
         if transport is not None:
             try:
@@ -992,15 +1001,18 @@ class InvisOutletClient:
         message = self._build_message(packet_id, callback_name, callback_args)
         await self._transport.send(message)
 
-    async def _read_loop(self) -> None:
-        """Read messages from the transport and dispatch them.
+    async def _read_loop(self) -> str | None:
+        """Read messages from the transport, returning why the read ended.
 
         Returns when the transport's iterator stops (connection closed/errored);
-        :meth:`_supervise` then handles the disconnect and reconnect.
+        :meth:`_supervise` then handles the disconnect and reconnect. The
+        returned reason names the cause for the disconnect log line, since a
+        pong timeout, a device-side close and a TCP reset are otherwise
+        indistinguishable in the logs.
         """
         transport = self._transport
         if transport is None:
-            return
+            return None
         try:
             async for data in transport:
                 self._dispatch(data)
@@ -1009,9 +1021,11 @@ class InvisOutletClient:
         except OSError as err:
             # Expected connection-level failure (reset by peer, keepalive
             # timeout, ...): the supervisor reconnects; no traceback needed.
-            _LOGGER.debug("Connection error on read from %s: %s", self.host, err)
-        except Exception:
+            return f"{type(err).__name__}: {err}"
+        except Exception as err:
             _LOGGER.exception("Error in transport read loop")
+            return f"{type(err).__name__}: {err}"
+        return transport.close_reason
 
     def _dispatch(self, msg: dict[str, Any]) -> None:
         """Route a parsed message to the right handler."""

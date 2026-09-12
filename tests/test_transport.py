@@ -129,6 +129,7 @@ class _FakeWs:
 
     def __init__(self, messages: list[FakeMessage]) -> None:
         self._messages = list(messages)
+        self.close_code: int | None = None
 
     async def receive(self) -> FakeMessage:
         if self._messages:
@@ -223,3 +224,21 @@ async def test_connect_falls_back_to_ws(monkeypatch: pytest.MonkeyPatch) -> None
     assert client._transport is ws
     assert client._preferred_name == "ws"
     await client.close()
+
+
+async def test_ws_records_pong_timeout_as_close_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An aiohttp error frame is recorded as the reason the read ended."""
+    ws = _FakeWs([FakeMessage(aiohttp.WSMsgType.ERROR, "")])
+    monkeypatch.setattr(
+        ws, "exception", lambda: Exception("No PONG received after 5.0 seconds")
+    )
+    transport = WsTransport("device.local")
+    transport._ws = ws
+
+    with pytest.raises(StopAsyncIteration):
+        await transport.__anext__()
+
+    assert transport.close_reason is not None
+    assert "No PONG received after 5.0 seconds" in transport.close_reason
