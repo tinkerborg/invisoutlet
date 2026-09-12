@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import pytest
 from typer.testing import CliRunner
@@ -63,7 +63,7 @@ class RecordingClient:
         self.calls.append(("connect", (host,)))
         self._ota_result: Any = None
 
-    async def __aenter__(self) -> "RecordingClient":
+    async def __aenter__(self) -> Self:
         """Enter the async context."""
         return self
 

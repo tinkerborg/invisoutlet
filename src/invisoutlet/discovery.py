@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from zeroconf import ServiceStateChange, Zeroconf
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 
-
 # NOTE: the mDNS service type is not documented in the official API reference
 # (which points to Home Assistant MQTT discovery instead). This value is
 # reverse-engineered and unverified.

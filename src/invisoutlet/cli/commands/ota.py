@@ -45,13 +45,19 @@ def check(ctx: typer.Context) -> None:
     run_with_client(ctx.obj, _check)
 
 
+# Typer sentinels as module-level singletons (calling them in argument defaults
+# trips flake8-bugbear B008).
+_TARGET_ARG = typer.Argument(..., help="Which module to update.")
+_METHOD_OPT = typer.Option(
+    _Method.wifi, "--method", help="Delivery method (faceplate only)."
+)
+
+
 @ota_app.command()
 def update(
     ctx: typer.Context,
-    target: _Target = typer.Argument(..., help="Which module to update."),
-    method: _Method = typer.Option(
-        _Method.wifi, "--method", help="Delivery method (faceplate only)."
-    ),
+    target: _Target = _TARGET_ARG,
+    method: _Method = _METHOD_OPT,
 ) -> None:
     """Start an OTA update and stream progress until it completes."""
     run_with_client(

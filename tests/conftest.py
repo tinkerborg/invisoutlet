@@ -1,4 +1,4 @@
-"""Shared fixtures and a fake aiohttp WebSocket for client tests."""
+"""Shared fixtures and an in-memory fake transport for client tests."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from invisoutlet.client import InvisOutletClient
 
 
 class FakeMessage:
-    """Stand-in for an aiohttp WSMessage."""
+    """Stand-in for an aiohttp WSMessage (used by the WsTransport tests)."""
 
     def __init__(self, mtype: aiohttp.WSMsgType, data: str) -> None:
         """Initialize the message."""
@@ -22,35 +22,31 @@ class FakeMessage:
         self.data = data
 
 
-class FakeWebSocket:
-    """In-memory double for aiohttp's ClientWebSocketResponse.
+class FakeTransport:
+    """In-memory double for a client transport.
 
-    On ``send_str`` it auto-replies with an envelope echoing the request's
-    ``packetID``, using configurable ``responses`` (callbackArgs per callback),
-    ``puback`` status, and a ``no_reply`` set of callbacks that send nothing.
+    Speaks the transport interface (``connect`` / ``send`` / async-iterate
+    decoded ``dict`` messages / ``close``). On ``send`` it auto-replies with an
+    envelope echoing the request's ``packetID``, using configurable ``responses``
+    (callbackArgs per callback), ``puback`` status, and a ``no_reply`` set of
+    callbacks that send nothing.
     """
 
+    name = "fake"
+
     def __init__(self) -> None:
-        """Initialize the fake socket."""
-        self._queue: asyncio.Queue[FakeMessage | None] = asyncio.Queue()
+        """Initialize the fake transport."""
+        self._queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self.sent: list[dict[str, Any]] = []
         self.closed = False
         self.responses: dict[int, Any] = {}
         self.puback: int = 1
         self.no_reply: set[int] = set()
 
-    def __aiter__(self) -> AsyncIterator[FakeMessage]:
-        """Iterate incoming messages."""
-        return self
+    async def connect(self) -> None:
+        """No-op: tests inject this transport directly."""
 
-    async def __anext__(self) -> FakeMessage:
-        """Return the next incoming message."""
-        msg = await self._queue.get()
-        if msg is None:
-            raise StopAsyncIteration
-        return msg
-
-    async def send_str(self, data: str) -> None:
+    async def send(self, data: str) -> None:
         """Record an outgoing request and enqueue the canned reply."""
         sent = json.loads(data)
         self.sent.append(sent)
@@ -64,54 +60,38 @@ class FakeWebSocket:
         }
         if callback_name in self.responses:
             response["payload"]["callbackArgs"] = self.responses[callback_name]
-        self._queue.put_nowait(FakeMessage(aiohttp.WSMsgType.TEXT, json.dumps(response)))
+        self._queue.put_nowait(response)
 
     def push(self, message: dict[str, Any]) -> None:
         """Inject a server-initiated message that is not a reply."""
-        self._queue.put_nowait(FakeMessage(aiohttp.WSMsgType.TEXT, json.dumps(message)))
+        self._queue.put_nowait(message)
+
+    def __aiter__(self) -> AsyncIterator[dict[str, Any]]:
+        """Iterate incoming decoded messages."""
+        return self
+
+    async def __anext__(self) -> dict[str, Any]:
+        """Return the next incoming message."""
+        msg = await self._queue.get()
+        if msg is None:
+            raise StopAsyncIteration
+        return msg
 
     async def close(self) -> None:
-        """Close the socket and unblock the reader."""
+        """Close the transport and unblock the reader."""
         self.closed = True
         self._queue.put_nowait(None)
 
-    def exception(self) -> Exception | None:
-        """Return the stored exception (none for the fake)."""
-        return None
-
-
-class FakeSession:
-    """Minimal stand-in for aiohttp.ClientSession."""
-
-    def __init__(self) -> None:
-        """Initialize the fake session."""
-        self.closed = False
-        self._next_ws: list[FakeWebSocket] = []
-
-    def queue_ws(self, ws: FakeWebSocket) -> None:
-        """Queue a websocket to be handed out by the next ``ws_connect``."""
-        self._next_ws.append(ws)
-
-    async def ws_connect(self, url: str, **kwargs: object) -> FakeWebSocket:
-        """Return the next queued websocket, or fail like a refused connection."""
-        if not self._next_ws:
-            raise aiohttp.ClientError("connection refused")
-        return self._next_ws.pop(0)
-
-    async def close(self) -> None:
-        """Mark the session closed."""
-        self.closed = True
-
 
 @pytest.fixture
-async def connected_client() -> AsyncIterator[tuple[InvisOutletClient, FakeWebSocket]]:
-    """Yield a client wired to a fake WebSocket with its read loop running."""
+async def connected_client() -> AsyncIterator[tuple[InvisOutletClient, FakeTransport]]:
+    """Yield a client wired to a fake transport with its read loop running."""
     client = InvisOutletClient("device.local")
-    ws = FakeWebSocket()
-    client._ws = ws  # type: ignore[assignment]
-    client._session = FakeSession()  # type: ignore[assignment]
+    transport = FakeTransport()
+    client._transport = transport  # type: ignore[assignment]
+    client._preferred_name = transport.name
     client._read_task = asyncio.create_task(client._read_loop())
     try:
-        yield client, ws
+        yield client, transport
     finally:
         await client.close()
