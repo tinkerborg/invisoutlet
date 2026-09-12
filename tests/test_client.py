@@ -650,6 +650,45 @@ async def test_handle_disconnect_fails_pending_and_tolerates_close_error(
     assert disconnects == [1]
 
 
+async def test_set_host_reconnects_to_new_address(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A new address drops the live connection and is used for the reconnect."""
+    monkeypatch.setattr("invisoutlet.client._RECONNECT_INITIAL_DELAY", 0.01)
+
+    t1, t2 = FakeTransport(), FakeTransport()
+    client = InvisOutletClient("10.0.0.10")
+    _queue_transports(client, t1, t2)
+    await client.connect()
+    assert client._transport is t1
+
+    await client.set_host("10.0.0.250")
+    assert client.host == "10.0.0.250"
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+        if client._transport is t2:
+            break
+    assert client._transport is t2
+
+    await client.close()
+
+
+async def test_set_host_same_address_is_a_noop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Re-announcing the address the client already has leaves it connected."""
+    t1 = FakeTransport()
+    client = InvisOutletClient("10.0.0.10")
+    _queue_transports(client, t1)
+    await client.connect()
+
+    await client.set_host("10.0.0.10")
+    await asyncio.sleep(0.02)
+    assert client._transport is t1
+
+    await client.close()
+
+
 async def test_reconnect_retries_after_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """When the first reconnect attempt fails, it backs off and retries."""
     monkeypatch.setattr("invisoutlet.client._RECONNECT_INITIAL_DELAY", 0.01)
