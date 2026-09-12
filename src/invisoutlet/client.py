@@ -260,7 +260,7 @@ class InvisOutletClient:
                 await transport.connect()
             except InvisOutletError as err:
                 last_err = err
-                _LOGGER.debug(
+                _LOGGER.warning(
                     "Transport %s to %s failed: %s", transport.name, self.host, err
                 )
                 await transport.close()
@@ -345,7 +345,7 @@ class InvisOutletClient:
                 try:
                     await self._connect_transport()
                 except InvisOutletError as err:
-                    _LOGGER.debug("Reconnect to %s failed: %s", self.host, err)
+                    _LOGGER.info("Reconnect to %s failed: %s", self.host, err)
                     delay = min(delay * 2, _RECONNECT_MAX_DELAY)
                     continue
                 _LOGGER.info("Reconnected to %s", self.host)
