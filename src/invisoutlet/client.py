@@ -299,6 +299,21 @@ class InvisOutletClient:
         """Fire the registered on-disconnect callbacks."""
         _fire(self._disconnect_callbacks, "on_disconnect")
 
+    async def set_host(self, host: str) -> None:
+        """Point the client at a new address, dropping the current connection.
+
+        The supervisor rebuilds its transports from ``host`` on every attempt,
+        so closing the live one is enough to make it reconnect to the new
+        address. A no-op when the address hasn't moved.
+        """
+        if host == self.host:
+            return
+        _LOGGER.info("Address for %s changed to %s; reconnecting", self.host, host)
+        self.host = host
+        transport = self._transport
+        if transport is not None:
+            await transport.close()
+
     async def _cleanup(self) -> None:
         """Close the transport and the firmware-lookup HTTP session."""
         if self._transport is not None:
